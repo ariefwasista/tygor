@@ -10,6 +10,7 @@ import pc from "picocolors";
 import { createClient } from "@tygor/client";
 import { registry as devserverRegistry } from "./devserver/manifest.js";
 import { clientBundle } from "./generated/client-bundle.js";
+import { VERSION } from "./generated/version.js";
 
 export interface TygorDevOptions {
   /** Run tygor gen automatically (default: true). Set to false to disable. */
@@ -42,7 +43,7 @@ export interface TygorDevOptions {
   workdir?: string;
   /** Proxy path prefixes to route to Go server (auto-derived from discovery.json if not specified) */
   proxy?: string[];
-  /** Override the tygor command (default: auto-detected local or 'go run ...@latest') */
+  /** Override the tygor command (default: auto-detected local or 'go run tygor.dev/cmd/tygor@v{version}') */
   tygorCommand?: string | string[];
   /**
    * Prefix for proxied API paths (default: '/').
@@ -108,9 +109,8 @@ function getTygorCommand(override?: string | string[]): string[] {
     if (parent === dir) break; // reached root
     dir = parent;
   }
-  // Published mode - use go run with version
-  // TODO: inject version at build time
-  return ["go", "run", "tygor.dev/cmd/tygor@latest"];
+  // Published mode - use go run with pinned version
+  return ["go", "run", `tygor.dev/cmd/tygor@v${VERSION}`];
 }
 
 /** Auto-detect devtools bundle path when in tygor repo */

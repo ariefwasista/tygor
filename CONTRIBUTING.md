@@ -226,10 +226,36 @@ Extract with `make snippet-go` or `make snippet-ts`.
 3. Run `make check` before submitting to ensure generated files are current
 4. Test that examples build and run before submitting
 
+## Commit Messages
+
+We use [Conventional Commits](https://www.conventionalcommits.org/). Format:
+
+```
+<type>(<scope>): <description>
+```
+
+**Types:**
+- `feat:` new features
+- `fix:` bug fixes
+- `docs:` documentation changes
+- `refactor:` code refactoring (no functional change)
+- `test:` adding or updating tests
+- `chore:` maintenance tasks
+
+**Scopes** (optional): `client`, `vite-plugin`, `tygorgen`, `middleware`
+
+**Examples:**
+```
+feat(client): add retry support for failed requests
+fix(vite-plugin): pin tygor CLI to package version
+docs: update installation instructions
+refactor(tygorgen): simplify type generation logic
+```
+
 ## Pull Request Process
 
 1. Create a feature branch from `main`
-2. Make your changes with clear, focused commits
+2. Make your changes with clear, focused commits using conventional commit format
 3. Add tests for new functionality
 4. Run `make precommit` to ensure all checks pass
 5. Optionally run `make ci-local` to test the full CI workflow
