@@ -68,14 +68,14 @@ const user = await client.Users.Get({ id: "123" });
 
 ## Try it now
 
-Clone the React + Vite example and start building:
+Clone the Solid.js + Vite starter and start building:
 
 ```bash
-bunx degit ahimsalabs/tygor/examples/react#v0.8.3 my-app
+bunx degit ahimsalabs/tygor-templates/starter-solid my-app
 cd my-app && bun i && bun dev
 ```
 
-Or with npm: `npx degit ahimsalabs/tygor/examples/react#v0.8.3 my-app`
+Or React: `bunx degit ahimsalabs/tygor-templates/starter-react my-app`
 
 Prerequisites: Go 1.21+, Node.js 18+
 
