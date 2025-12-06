@@ -14,17 +14,17 @@ import (
 	"tygor.dev/internal"
 )
 
-// Atom holds a single value that can be read, written, and subscribed to.
+// LiveValue holds a single value that can be read, written, and subscribed to.
 // Updates are broadcast to all subscribers via SSE streaming.
 // Thread-safe for concurrent Get/Set operations.
 //
-// Unlike event streams, Atom represents current state - subscribers always
+// Unlike event streams, LiveValue represents current state - subscribers always
 // receive the latest value, and intermediate updates may be skipped if
 // a subscriber is slow.
 //
 // Example:
 //
-//	status := tygor.NewAtom(&Status{State: "idle"})
+//	status := tygor.NewLiveValue(&Status{State: "idle"})
 //
 //	// Read current value
 //	current := status.Get()
@@ -32,9 +32,9 @@ import (
 //	// Update and broadcast to all subscribers
 //	status.Set(&Status{State: "running"})
 //
-//	// Register SSE endpoint with proper "atom" primitive
+//	// Register SSE endpoint with proper "livevalue" primitive
 //	svc.Register("Status", status.Handler())
-type Atom[T any] struct {
+type LiveValue[T any] struct {
 	mu          sync.RWMutex
 	value       T
 	bytes       json.RawMessage // pre-serialized for efficient broadcast
@@ -43,9 +43,9 @@ type Atom[T any] struct {
 	closed      bool
 }
 
-// NewAtom creates a new Atom with the given initial value.
-func NewAtom[T any](initial T) *Atom[T] {
-	a := &Atom[T]{
+// NewLiveValue creates a new LiveValue with the given initial value.
+func NewLiveValue[T any](initial T) *LiveValue[T] {
+	a := &LiveValue[T]{
 		value:       initial,
 		subscribers: make(map[int64]chan json.RawMessage),
 	}
@@ -55,7 +55,7 @@ func NewAtom[T any](initial T) *Atom[T] {
 }
 
 // Get returns the current value.
-func (a *Atom[T]) Get() T {
+func (a *LiveValue[T]) Get() T {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.value
@@ -63,8 +63,8 @@ func (a *Atom[T]) Get() T {
 
 // Set updates the value and broadcasts to all subscribers.
 // The value is serialized once and the same bytes are sent to all subscribers.
-// No-op if the Atom has been closed.
-func (a *Atom[T]) Set(value T) {
+// No-op if the LiveValue has been closed.
+func (a *LiveValue[T]) Set(value T) {
 	// Serialize once before taking lock
 	data, err := json.Marshal(value)
 	if err != nil {
@@ -113,7 +113,7 @@ func (a *Atom[T]) Set(value T) {
 
 // Update atomically applies fn to the current value.
 // Useful for read-modify-write operations.
-func (a *Atom[T]) Update(fn func(T) T) {
+func (a *LiveValue[T]) Update(fn func(T) T) {
 	a.mu.Lock()
 	newValue := fn(a.value)
 	a.mu.Unlock()
@@ -121,9 +121,9 @@ func (a *Atom[T]) Update(fn func(T) T) {
 }
 
 // Subscribe returns an iterator that yields the current value and all future
-// updates until ctx is canceled or the Atom is closed.
+// updates until ctx is canceled or the LiveValue is closed.
 // For use in Go code, not HTTP handlers.
-func (a *Atom[T]) Subscribe(ctx context.Context) iter.Seq[T] {
+func (a *LiveValue[T]) Subscribe(ctx context.Context) iter.Seq[T] {
 	return func(yield func(T) bool) {
 		// Send current value
 		a.mu.RLock()
@@ -167,19 +167,19 @@ func (a *Atom[T]) Subscribe(ctx context.Context) iter.Seq[T] {
 	}
 }
 
-// Handler returns an AtomHandler for registering with a Service.
-// The handler uses the "atom" primitive for proper TypeScript codegen.
+// Handler returns a LiveValueHandler for registering with a Service.
+// The handler uses the "livevalue" primitive for proper TypeScript codegen.
 //
 // Example:
 //
-//	svc.Register("Status", statusAtom.Handler())
-func (a *Atom[T]) Handler() *AtomHandler[T] {
-	return &AtomHandler[T]{atom: a}
+//	svc.Register("Status", statusLiveValue.Handler())
+func (a *LiveValue[T]) Handler() *LiveValueHandler[T] {
+	return &LiveValueHandler[T]{liveValue: a}
 }
 
 // addSubscriber adds a channel to the subscriber list.
-// Returns -1 if the Atom has been closed.
-func (a *Atom[T]) addSubscriber(ch chan json.RawMessage) int64 {
+// Returns -1 if the LiveValue has been closed.
+func (a *LiveValue[T]) addSubscriber(ch chan json.RawMessage) int64 {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -194,7 +194,7 @@ func (a *Atom[T]) addSubscriber(ch chan json.RawMessage) int64 {
 }
 
 // removeSubscriber removes a channel from the subscriber list.
-func (a *Atom[T]) removeSubscriber(id int64) {
+func (a *LiveValue[T]) removeSubscriber(id int64) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	delete(a.subscribers, id)
@@ -202,7 +202,7 @@ func (a *Atom[T]) removeSubscriber(id int64) {
 
 // Close signals all subscribers to disconnect and prevents new subscriptions.
 // Safe to call multiple times. After Close, Set is a no-op.
-func (a *Atom[T]) Close() {
+func (a *LiveValue[T]) Close() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -218,51 +218,51 @@ func (a *Atom[T]) Close() {
 	}
 }
 
-// AtomHandler implements [Endpoint] for Atom subscriptions.
+// LiveValueHandler implements [Endpoint] for LiveValue subscriptions.
 // It streams the current value immediately, then pushes updates via SSE.
-type AtomHandler[T any] struct {
-	atom              *Atom[T]
+type LiveValueHandler[T any] struct {
+	liveValue         *LiveValue[T]
 	interceptors      []UnaryInterceptor
 	writeTimeout      time.Duration
 	heartbeatInterval time.Duration
 }
 
 // WithUnaryInterceptor adds an interceptor that runs during stream setup.
-func (h *AtomHandler[T]) WithUnaryInterceptor(i UnaryInterceptor) *AtomHandler[T] {
+func (h *LiveValueHandler[T]) WithUnaryInterceptor(i UnaryInterceptor) *LiveValueHandler[T] {
 	h.interceptors = append(h.interceptors, i)
 	return h
 }
 
 // WithWriteTimeout sets the timeout for writing each event to the client.
-func (h *AtomHandler[T]) WithWriteTimeout(d time.Duration) *AtomHandler[T] {
+func (h *LiveValueHandler[T]) WithWriteTimeout(d time.Duration) *LiveValueHandler[T] {
 	h.writeTimeout = d
 	return h
 }
 
 // WithHeartbeat sets the interval for sending SSE heartbeat comments.
-func (h *AtomHandler[T]) WithHeartbeat(d time.Duration) *AtomHandler[T] {
+func (h *LiveValueHandler[T]) WithHeartbeat(d time.Duration) *LiveValueHandler[T] {
 	h.heartbeatInterval = d
 	return h
 }
 
 // Metadata implements [Endpoint].
-func (h *AtomHandler[T]) Metadata() *internal.MethodMetadata {
+func (h *LiveValueHandler[T]) Metadata() *internal.MethodMetadata {
 	var req Empty
 	var res T
 	return &internal.MethodMetadata{
-		Primitive: "atom",
+		Primitive: "livevalue",
 		Request:   reflect.TypeOf(req),
 		Response:  reflect.TypeOf(res),
 	}
 }
 
-// metadata returns the runtime metadata for the atom handler.
-func (h *AtomHandler[T]) metadata() *internal.MethodMetadata {
+// metadata returns the runtime metadata for the livevalue handler.
+func (h *LiveValueHandler[T]) metadata() *internal.MethodMetadata {
 	return h.Metadata()
 }
 
-// serveHTTP implements the SSE streaming for atom subscriptions.
-func (h *AtomHandler[T]) serveHTTP(ctx *rpcContext) {
+// serveHTTP implements the SSE streaming for livevalue subscriptions.
+func (h *LiveValueHandler[T]) serveHTTP(ctx *rpcContext) {
 	// Run unary interceptors for setup (auth, etc.)
 	if len(h.interceptors) > 0 || len(ctx.interceptors) > 0 {
 		allInterceptors := make([]UnaryInterceptor, 0, len(ctx.interceptors)+len(h.interceptors))
@@ -279,14 +279,14 @@ func (h *AtomHandler[T]) serveHTTP(ctx *rpcContext) {
 		}
 	}
 
-	// Check if atom is closed before setting up SSE
-	h.atom.mu.RLock()
-	current := h.atom.bytes
-	closed := h.atom.closed
-	h.atom.mu.RUnlock()
+	// Check if livevalue is closed before setting up SSE
+	h.liveValue.mu.RLock()
+	current := h.liveValue.bytes
+	closed := h.liveValue.closed
+	h.liveValue.mu.RUnlock()
 
 	if closed {
-		handleError(ctx, NewError(CodeUnavailable, "atom closed"))
+		handleError(ctx, NewError(CodeUnavailable, "livevalue closed"))
 		return
 	}
 
@@ -325,7 +325,7 @@ func (h *AtomHandler[T]) serveHTTP(ctx *rpcContext) {
 
 	if err := h.writeSSEEvent(ctx.writer, current); err != nil {
 		if !isClientDisconnect(err) {
-			logger.Error("failed to write initial atom value",
+			logger.Error("failed to write initial livevalue value",
 				slog.String("endpoint", ctx.EndpointID()),
 				slog.Any("error", err))
 		}
@@ -335,11 +335,11 @@ func (h *AtomHandler[T]) serveHTTP(ctx *rpcContext) {
 
 	// Subscribe for updates
 	ch := make(chan json.RawMessage, 1)
-	subID := h.atom.addSubscriber(ch)
+	subID := h.liveValue.addSubscriber(ch)
 	if subID < 0 {
-		return // Atom was closed between check and subscribe
+		return // LiveValue was closed between check and subscribe
 	}
-	defer h.atom.removeSubscriber(subID)
+	defer h.liveValue.removeSubscriber(subID)
 
 	// Set up heartbeat
 	var heartbeat <-chan time.Time
@@ -368,7 +368,7 @@ func (h *AtomHandler[T]) serveHTTP(ctx *rpcContext) {
 
 		case data, ok := <-ch:
 			if !ok {
-				return // Atom was closed
+				return // LiveValue was closed
 			}
 
 			if rc != nil {
@@ -382,7 +382,7 @@ func (h *AtomHandler[T]) serveHTTP(ctx *rpcContext) {
 
 			if err := h.writeSSEEvent(ctx.writer, data); err != nil {
 				if !isClientDisconnect(err) {
-					logger.Error("failed to write atom update",
+					logger.Error("failed to write livevalue update",
 						slog.String("endpoint", ctx.EndpointID()),
 						slog.Any("error", err))
 				}
@@ -398,7 +398,7 @@ func (h *AtomHandler[T]) serveHTTP(ctx *rpcContext) {
 }
 
 // writeSSEEvent writes a pre-serialized value as an SSE event.
-func (h *AtomHandler[T]) writeSSEEvent(w http.ResponseWriter, data json.RawMessage) error {
+func (h *LiveValueHandler[T]) writeSSEEvent(w http.ResponseWriter, data json.RawMessage) error {
 	// Wrap in response envelope: {"result": <data>}
 	// Since data is already JSON, we construct the envelope manually
 	_, err := fmt.Fprintf(w, "data: {\"result\":%s}\n\n", data)

@@ -36,7 +36,7 @@ type ServiceDescriptor struct {
 type EndpointDescriptor struct {
 	Name      string   `json:"name"`
 	FullName  string   `json:"fullName"`
-	Primitive string   `json:"primitive"` // "query", "exec", "stream", or "atom"
+	Primitive string   `json:"primitive"` // "query", "exec", "stream", or "livevalue"
 	Path      string   `json:"path"`
 	Request   *TypeRef `json:"request,omitempty"`
 	Response  *TypeRef `json:"response,omitempty"`

@@ -437,48 +437,48 @@ describe("createClient", () => {
   });
 });
 
-describe("Atom primitive", () => {
-  const atomMetadata = {
-    "Tasks.SyncedList": { path: "/tasks/synced", primitive: "atom" as const },
+describe("LiveValue primitive", () => {
+  const liveValueMetadata = {
+    "Tasks.SyncedList": { path: "/tasks/synced", primitive: "livevalue" as const },
   };
 
-  type AtomManifest = {
-    "Tasks.SyncedList": { req: Record<string, never>; res: string[]; primitive: "atom" };
+  type LiveValueManifest = {
+    "Tasks.SyncedList": { req: Record<string, never>; res: string[]; primitive: "livevalue" };
   };
 
-  const atomRegistry: ServiceRegistry<AtomManifest> = {
-    manifest: {} as AtomManifest,
-    metadata: atomMetadata,
+  const liveValueRegistry: ServiceRegistry<LiveValueManifest> = {
+    manifest: {} as LiveValueManifest,
+    metadata: liveValueMetadata,
   };
 
-  test("atom returns object with data and state properties", () => {
+  test("livevalue returns object with data and state properties", () => {
     const mockFetch = mock(async () => mockResponse(200, { result: [] }));
 
-    const client = createClient(atomRegistry, {
+    const client = createClient(liveValueRegistry, {
       baseUrl: "http://localhost:8080",
       fetch: mockFetch,
     });
 
-    const atom = client.Tasks.SyncedList;
+    const liveValue = client.Tasks.SyncedList;
 
-    // Check that atom has subscribe/getSnapshot shape
-    expect(atom).toBeDefined();
-    expect(typeof atom.subscribe).toBe("function");
-    expect(typeof atom.getSnapshot).toBe("function");
+    // Check that livevalue has subscribe/getSnapshot shape
+    expect(liveValue).toBeDefined();
+    expect(typeof liveValue.subscribe).toBe("function");
+    expect(typeof liveValue.getSnapshot).toBe("function");
   });
 
-  test("atom.subscribe immediately emits current state", () => {
+  test("livevalue.subscribe immediately emits current state", () => {
     const mockFetch = mock(async () => mockResponse(200, { result: [] }));
 
-    const client = createClient(atomRegistry, {
+    const client = createClient(liveValueRegistry, {
       baseUrl: "http://localhost:8080",
       fetch: mockFetch,
     });
 
-    const atom = client.Tasks.SyncedList;
+    const liveValue = client.Tasks.SyncedList;
     const results: SubscriptionResult<string[]>[] = [];
 
-    const unsubscribe = atom.subscribe((result) => {
+    const unsubscribe = liveValue.subscribe((result) => {
       results.push(result);
     });
 
@@ -491,16 +491,16 @@ describe("Atom primitive", () => {
     unsubscribe();
   });
 
-  test("atom.subscribe returns unsubscribe function", () => {
+  test("livevalue.subscribe returns unsubscribe function", () => {
     const mockFetch = mock(async () => mockResponse(200, { result: [] }));
 
-    const client = createClient(atomRegistry, {
+    const client = createClient(liveValueRegistry, {
       baseUrl: "http://localhost:8080",
       fetch: mockFetch,
     });
 
-    const atom = client.Tasks.SyncedList;
-    const unsubscribe = atom.subscribe(() => {});
+    const liveValue = client.Tasks.SyncedList;
+    const unsubscribe = liveValue.subscribe(() => {});
 
     expect(typeof unsubscribe).toBe("function");
     unsubscribe();

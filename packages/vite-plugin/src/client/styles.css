@@ -146,6 +146,42 @@
   width: var(--tygor-tiger-btn-size);
   height: var(--tygor-tiger-btn-size);
   flex-shrink: 0;
+  position: relative;
+}
+
+/* Warning badge overlay */
+.tygor-tiger-warning-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  font-size: 12px;
+  line-height: 1;
+  animation: tygor-pulse-warning 2s ease-in-out infinite;
+}
+
+.tygor-tiger-btn--warning {
+  border-color: #f59e0b;
+  animation: tygor-glow-warning 2s ease-in-out infinite;
+}
+
+@keyframes tygor-glow-warning {
+  0%, 100% {
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+  }
+  50% {
+    box-shadow: 0 0 15px rgba(245, 158, 11, 0.4), 0 0 25px rgba(245, 158, 11, 0.2);
+  }
+}
+
+@keyframes tygor-pulse-warning {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.1);
+  }
 }
 
 .tygor-tiger-btn-content {
@@ -488,6 +524,63 @@
 .tygor-sidebar-rpc-message {
   font-size: 11px;
   color: var(--tygor-text-muted);
+}
+
+/* Connection Stalled Warning */
+.tygor-sidebar-warning {
+  padding: 12px;
+  background: rgba(245, 158, 11, 0.08);
+  border-bottom: 1px solid rgba(245, 158, 11, 0.15);
+}
+
+.tygor-sidebar-warning-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.tygor-sidebar-warning-icon {
+  font-size: 14px;
+}
+
+.tygor-sidebar-warning-title {
+  font-weight: 600;
+  font-size: 12px;
+  color: #b45309;
+}
+
+.tygor-sidebar-warning-message {
+  font-size: 11px;
+  color: var(--tygor-text);
+  line-height: 1.5;
+  margin-bottom: 8px;
+}
+
+.tygor-sidebar-warning-fix {
+  font-size: 11px;
+  color: var(--tygor-text-muted);
+  line-height: 1.5;
+  margin-bottom: 8px;
+}
+
+.tygor-sidebar-warning-fix code {
+  background: rgba(245, 158, 11, 0.15);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-family: var(--tygor-font-mono);
+  font-size: 10px;
+}
+
+.tygor-sidebar-warning-link {
+  display: inline-block;
+  font-size: 11px;
+  color: #b45309;
+  text-decoration: none;
+}
+
+.tygor-sidebar-warning-link:hover {
+  text-decoration: underline;
 }
 
 /* Sections */

@@ -9,6 +9,7 @@ interface ErrorInfo {
 interface TigerButtonProps {
   isBuilding: boolean;
   hasError: boolean;
+  hasWarning: boolean;
   isDisconnected: boolean;
   errorInfo: ErrorInfo | null;
   onClick: () => void;
@@ -63,6 +64,7 @@ function extractErrorSummary(error: string, phase: string): string | null {
 export function TigerButton(props: TigerButtonProps) {
   const showRunning = () => props.isBuilding && !props.isDisconnected;
   const showExpanded = () => props.hasError && !props.isDisconnected && props.errorInfo;
+  const showWarningBadge = () => props.hasWarning && !props.hasError && !props.isDisconnected;
 
   const phaseLabel = () => {
     if (!props.errorInfo) return "Error";
@@ -83,15 +85,19 @@ export function TigerButton(props: TigerButtonProps) {
       classList={{
         "tygor-tiger-btn--building": showRunning(),
         "tygor-tiger-btn--error": props.hasError && !props.isDisconnected,
+        "tygor-tiger-btn--warning": showWarningBadge(),
         "tygor-tiger-btn--disconnected": props.isDisconnected,
         "tygor-tiger-btn--expanded": showExpanded(),
       }}
       onClick={props.onClick}
-      title={props.isDisconnected ? "Tygor DevTools (disconnected)" : "Open Tygor DevTools"}
+      title={props.isDisconnected ? "Tygor DevTools (disconnected)" : props.hasWarning ? "Tygor DevTools (connection stalled)" : "Open Tygor DevTools"}
     >
       <span class="tygor-tiger-btn-icon">
         <Show when={showRunning()} fallback={<span class="tygor-tiger-icon">🐯</span>}>
           <span class="tygor-tiger-runner">🐅</span>
+        </Show>
+        <Show when={showWarningBadge()}>
+          <span class="tygor-tiger-warning-badge">⚠️</span>
         </Show>
       </span>
       <Show when={showExpanded()}>

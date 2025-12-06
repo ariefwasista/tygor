@@ -1949,7 +1949,7 @@ For stream endpoints, the `Response` type describes each individual event in the
 
 **Future Extension**: Additional primitives may be added:
 
-- `"atom"`: Synchronized values (last-write-wins state sync)
+- `"livevalue"`: Synchronized values (last-write-wins state sync)
 - `"channel"`: Bidirectional communication (WebSocket)
 
 These would follow the same pattern: `Primitive` indicates the semantic communication pattern, and the client/server derive the appropriate transport protocol.

@@ -10,33 +10,33 @@ import (
 	"time"
 )
 
-func TestAtom_GetSet(t *testing.T) {
-	atom := NewAtom(42)
+func TestLiveValue_GetSet(t *testing.T) {
+	lv := NewLiveValue(42)
 
-	if got := atom.Get(); got != 42 {
+	if got := lv.Get(); got != 42 {
 		t.Errorf("expected 42, got %d", got)
 	}
 
-	atom.Set(100)
-	if got := atom.Get(); got != 100 {
+	lv.Set(100)
+	if got := lv.Get(); got != 100 {
 		t.Errorf("expected 100, got %d", got)
 	}
 }
 
-func TestAtom_Update(t *testing.T) {
-	atom := NewAtom(10)
+func TestLiveValue_Update(t *testing.T) {
+	lv := NewLiveValue(10)
 
-	atom.Update(func(v int) int {
+	lv.Update(func(v int) int {
 		return v * 2
 	})
 
-	if got := atom.Get(); got != 20 {
+	if got := lv.Get(); got != 20 {
 		t.Errorf("expected 20, got %d", got)
 	}
 }
 
-func TestAtom_Subscribe(t *testing.T) {
-	atom := NewAtom("initial")
+func TestLiveValue_Subscribe(t *testing.T) {
+	lv := NewLiveValue("initial")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -45,7 +45,7 @@ func TestAtom_Subscribe(t *testing.T) {
 	done := make(chan struct{})
 
 	go func() {
-		for v := range atom.Subscribe(ctx) {
+		for v := range lv.Subscribe(ctx) {
 			values = append(values, v)
 			if len(values) >= 3 {
 				cancel()
@@ -57,8 +57,8 @@ func TestAtom_Subscribe(t *testing.T) {
 	// Give subscriber time to start
 	time.Sleep(10 * time.Millisecond)
 
-	atom.Set("second")
-	atom.Set("third")
+	lv.Set("second")
+	lv.Set("third")
 
 	select {
 	case <-done:
@@ -74,15 +74,15 @@ func TestAtom_Subscribe(t *testing.T) {
 	}
 }
 
-func TestAtom_Close(t *testing.T) {
-	atom := NewAtom("value")
+func TestLiveValue_Close(t *testing.T) {
+	lv := NewLiveValue("value")
 
 	// Subscribe before close
 	ctx := context.Background()
 	subscribeDone := make(chan struct{})
 
 	go func() {
-		for range atom.Subscribe(ctx) {
+		for range lv.Subscribe(ctx) {
 		}
 		close(subscribeDone)
 	}()
@@ -90,8 +90,8 @@ func TestAtom_Close(t *testing.T) {
 	// Give subscriber time to start
 	time.Sleep(10 * time.Millisecond)
 
-	// Close the atom
-	atom.Close()
+	// Close the livevalue
+	lv.Close()
 
 	// Subscriber should exit
 	select {
@@ -101,15 +101,15 @@ func TestAtom_Close(t *testing.T) {
 	}
 
 	// Set should be no-op after close
-	atom.Set("new value")
-	if got := atom.Get(); got != "value" {
+	lv.Set("new value")
+	if got := lv.Get(); got != "value" {
 		t.Errorf("Set should be no-op after Close, got %q", got)
 	}
 
 	// New subscriptions should return immediately
 	subscribeAfterClose := make(chan struct{})
 	go func() {
-		for range atom.Subscribe(ctx) {
+		for range lv.Subscribe(ctx) {
 			t.Error("should not yield any values after Close")
 		}
 		close(subscribeAfterClose)
@@ -122,17 +122,17 @@ func TestAtom_Close(t *testing.T) {
 	}
 }
 
-func TestAtom_CloseIdempotent(t *testing.T) {
-	atom := NewAtom(1)
+func TestLiveValue_CloseIdempotent(t *testing.T) {
+	lv := NewLiveValue(1)
 
 	// Close multiple times should not panic
-	atom.Close()
-	atom.Close()
-	atom.Close()
+	lv.Close()
+	lv.Close()
+	lv.Close()
 }
 
-func TestAtom_ConcurrentAccess(t *testing.T) {
-	atom := NewAtom(0)
+func TestLiveValue_ConcurrentAccess(t *testing.T) {
+	lv := NewLiveValue(0)
 
 	var wg sync.WaitGroup
 	const numGoroutines = 10
@@ -144,7 +144,7 @@ func TestAtom_ConcurrentAccess(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for j := 0; j < numOps; j++ {
-				atom.Set(j)
+				lv.Set(j)
 			}
 		}()
 	}
@@ -155,7 +155,7 @@ func TestAtom_ConcurrentAccess(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for j := 0; j < numOps; j++ {
-				atom.Get()
+				lv.Get()
 			}
 		}()
 	}
@@ -166,7 +166,7 @@ func TestAtom_ConcurrentAccess(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for j := 0; j < numOps; j++ {
-				atom.Update(func(v int) int { return v + 1 })
+				lv.Update(func(v int) int { return v + 1 })
 			}
 		}()
 	}
@@ -174,32 +174,32 @@ func TestAtom_ConcurrentAccess(t *testing.T) {
 	wg.Wait()
 }
 
-func TestAtomHandler_Metadata(t *testing.T) {
+func TestLiveValueHandler_Metadata(t *testing.T) {
 	type Status struct {
 		State string `json:"state"`
 	}
 
-	atom := NewAtom(&Status{State: "idle"})
-	handler := atom.Handler()
+	lv := NewLiveValue(&Status{State: "idle"})
+	handler := lv.Handler()
 
 	meta := handler.Metadata()
-	if meta.Primitive != "atom" {
-		t.Errorf("expected primitive 'atom', got %q", meta.Primitive)
+	if meta.Primitive != "livevalue" {
+		t.Errorf("expected primitive 'livevalue', got %q", meta.Primitive)
 	}
 }
 
-func TestAtomHandler_SSE(t *testing.T) {
+func TestLiveValueHandler_SSE(t *testing.T) {
 	type Status struct {
 		State string `json:"state"`
 	}
 
-	atom := NewAtom(&Status{State: "idle"})
+	lv := NewLiveValue(&Status{State: "idle"})
 
 	app := NewApp()
 	svc := app.Service("System")
-	svc.Register("Status", atom.Handler())
+	svc.Register("Status", lv.Handler())
 
-	// Start request (atom uses POST)
+	// Start request (livevalue uses POST)
 	req := httptest.NewRequest("POST", "/System/Status", strings.NewReader("{}"))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -214,8 +214,8 @@ func TestAtomHandler_SSE(t *testing.T) {
 	// Give handler time to send initial value
 	time.Sleep(50 * time.Millisecond)
 
-	// Close atom to terminate the handler
-	atom.Close()
+	// Close livevalue to terminate the handler
+	lv.Close()
 
 	select {
 	case <-done:
@@ -239,16 +239,16 @@ func TestAtomHandler_SSE(t *testing.T) {
 	}
 }
 
-func TestAtomHandler_SSE_Updates(t *testing.T) {
+func TestLiveValueHandler_SSE_Updates(t *testing.T) {
 	type Counter struct {
 		Value int `json:"value"`
 	}
 
-	atom := NewAtom(&Counter{Value: 0})
+	lv := NewLiveValue(&Counter{Value: 0})
 
 	app := NewApp()
 	svc := app.Service("System")
-	svc.Register("Counter", atom.Handler())
+	svc.Register("Counter", lv.Handler())
 
 	server := httptest.NewServer(app.Handler())
 	defer server.Close()
@@ -272,8 +272,8 @@ func TestAtomHandler_SSE_Updates(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// Send updates
-	atom.Set(&Counter{Value: 1})
-	atom.Set(&Counter{Value: 2})
+	lv.Set(&Counter{Value: 1})
+	lv.Set(&Counter{Value: 2})
 
 	// Give time for updates to be sent
 	time.Sleep(50 * time.Millisecond)
@@ -289,13 +289,13 @@ func TestAtomHandler_SSE_Updates(t *testing.T) {
 	}
 }
 
-func TestAtomHandler_ClosedAtom(t *testing.T) {
-	atom := NewAtom("value")
-	atom.Close()
+func TestLiveValueHandler_ClosedLiveValue(t *testing.T) {
+	lv := NewLiveValue("value")
+	lv.Close()
 
 	app := NewApp()
 	svc := app.Service("System")
-	svc.Register("Status", atom.Handler())
+	svc.Register("Status", lv.Handler())
 
 	req := httptest.NewRequest("POST", "/System/Status", strings.NewReader("{}"))
 	req.Header.Set("Content-Type", "application/json")
@@ -303,7 +303,7 @@ func TestAtomHandler_ClosedAtom(t *testing.T) {
 
 	app.Handler().ServeHTTP(w, req)
 
-	// Should return error for closed atom
+	// Should return error for closed livevalue
 	if w.Code != http.StatusServiceUnavailable {
 		t.Errorf("expected status 503, got %d: %s", w.Code, w.Body.String())
 	}
@@ -316,13 +316,13 @@ func TestAtomHandler_ClosedAtom(t *testing.T) {
 	if !strings.Contains(body, `"code":"unavailable"`) {
 		t.Errorf("expected code 'unavailable', got: %s", body)
 	}
-	if !strings.Contains(body, `"atom closed"`) {
-		t.Errorf("expected message 'atom closed', got: %s", body)
+	if !strings.Contains(body, `"livevalue closed"`) {
+		t.Errorf("expected message 'livevalue closed', got: %s", body)
 	}
 }
 
-func TestAtomHandler_WithOptions(t *testing.T) {
-	atom := NewAtom("value")
+func TestLiveValueHandler_WithOptions(t *testing.T) {
+	lv := NewLiveValue("value")
 
 	authInterceptor := func(ctx Context, req any, handler HandlerFunc) (any, error) {
 		return nil, NewError(CodeUnauthenticated, "not authorized")
@@ -330,7 +330,7 @@ func TestAtomHandler_WithOptions(t *testing.T) {
 
 	app := NewApp()
 	svc := app.Service("System")
-	svc.Register("Status", atom.Handler().
+	svc.Register("Status", lv.Handler().
 		WithUnaryInterceptor(authInterceptor).
 		WithWriteTimeout(10*time.Second).
 		WithHeartbeat(30*time.Second))
@@ -347,9 +347,9 @@ func TestAtomHandler_WithOptions(t *testing.T) {
 	}
 }
 
-func TestAtom_SubscriberGetsLatestValue(t *testing.T) {
+func TestLiveValue_SubscriberGetsLatestValue(t *testing.T) {
 	// Test that slow subscribers get latest value (not queued intermediate values)
-	atom := NewAtom(0)
+	lv := NewLiveValue(0)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
@@ -362,12 +362,12 @@ func TestAtom_SubscriberGetsLatestValue(t *testing.T) {
 	go func() {
 		<-started
 		for i := 1; i <= 1000; i++ {
-			atom.Set(i)
+			lv.Set(i)
 			time.Sleep(time.Millisecond) // Spread out updates
 		}
 	}()
 
-	for v := range atom.Subscribe(ctx) {
+	for v := range lv.Subscribe(ctx) {
 		received = append(received, v)
 		once.Do(func() { close(started) })
 		// Slow subscriber - context timeout will terminate

@@ -132,7 +132,7 @@ export interface ServiceRegistry<Manifest extends Record<string, any>> {
     manifest: Manifest;
     metadata: Record<string, {
         path: string;
-        primitive: "query" | "exec" | "stream" | "atom";
+        primitive: "query" | "exec" | "stream" | "livevalue";
     }>;
 }
 /**
@@ -147,7 +147,7 @@ export interface StreamOptions {
  * It provides subscription to the latest value plus AsyncIterable for consuming all events.
  *
  * @example
- * // React - subscribe to latest value (same as Atom)
+ * // React - subscribe to latest value (same as LiveValue)
  * const result = useSyncExternalStore(
  *   stream.subscribe,
  *   stream.getSnapshot,
@@ -176,7 +176,7 @@ export interface Stream<T> extends AsyncIterable<T> {
  */
 export type SubscriptionStatus = "connecting" | "connected" | "reconnecting" | "completed" | "error" | "disconnected";
 /**
- * SubscriptionResult is the combined state of a subscription (Atom or Stream).
+ * SubscriptionResult is the combined state of a subscription (LiveValue or Stream).
  * Follows a similar pattern to TanStack Query's QueryObserverResult.
  */
 export interface SubscriptionResult<T> {
@@ -204,7 +204,7 @@ export interface SubscriptionResult<T> {
     isDisconnected: boolean;
 }
 /**
- * Atom represents a server-side state that syncs to clients in real-time.
+ * LiveValue represents a server-side state that syncs to clients in real-time.
  *
  * The subscribe method follows the external store contract expected by
  * React's useSyncExternalStore and similar patterns in other frameworks.
@@ -217,20 +217,20 @@ export interface SubscriptionResult<T> {
  *
  * // React with useSyncExternalStore
  * const result = useSyncExternalStore(
- *   atom.subscribe,
- *   atom.getSnapshot,
- *   atom.getSnapshot
+ *   liveValue.subscribe,
+ *   liveValue.getSnapshot,
+ *   liveValue.getSnapshot
  * );
  *
  * // Or use a selector for granular updates
  * const data = useSyncExternalStore(
- *   atom.subscribe,
- *   () => atom.getSnapshot().data,
- *   () => atom.getSnapshot().data
+ *   liveValue.subscribe,
+ *   () => liveValue.getSnapshot().data,
+ *   () => liveValue.getSnapshot().data
  * );
  */
-export interface Atom<T> {
-    /** Subscribe to all atom state changes. Returns unsubscribe function. */
+export interface LiveValue<T> {
+    /** Subscribe to all livevalue state changes. Returns unsubscribe function. */
     subscribe(listener: (result: SubscriptionResult<T>) => void): () => void;
     /** Get the current snapshot synchronously. */
     getSnapshot(): SubscriptionResult<T>;
@@ -245,8 +245,8 @@ type ServiceMethods<M, S extends string> = {
         primitive: "stream";
     } ? IsOptionalRequest<Req> extends true ? (req?: Req, options?: StreamOptions) => Stream<Res> : (req: Req, options?: StreamOptions) => Stream<Res> : M[K] extends {
         res: infer Res;
-        primitive: "atom";
-    } ? Atom<Res> : M[K] extends {
+        primitive: "livevalue";
+    } ? LiveValue<Res> : M[K] extends {
         req: infer Req;
         res: infer Res;
     } ? IsOptionalRequest<Req> extends true ? (req?: Req) => Promise<Res> : (req: Req) => Promise<Res> : never;

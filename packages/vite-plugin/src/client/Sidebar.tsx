@@ -57,11 +57,18 @@ const fetchDiscovery = async (): Promise<DiscoverySchema | null> => {
   }
 };
 
+interface ConnectionStalledInfo {
+  opId: string;
+  message: string;
+  docsUrl: string;
+}
+
 interface DevToolsState {
   status: GetStatusResponse | null;
   rpcError: TygorRpcError | null;
   disconnectedSince: number | null;
   errorSince: number | null;
+  connectionStalled: ConnectionStalledInfo | null;
 }
 
 interface SidebarProps {
@@ -446,7 +453,7 @@ export function Sidebar(props: SidebarProps) {
                                       query: "Query",
                                       exec: "Exec",
                                       stream: "Stream",
-                                      atom: "Atom",
+                                      livevalue: "LiveValue",
                                     }[primitive] || primitive;
                                     const params = formatRequestParams(ep.request, discovery()?.Types);
                                     const res = formatTypeRef(ep.response);
@@ -506,6 +513,33 @@ export function Sidebar(props: SidebarProps) {
               <span class="tygor-sidebar-rpc-code">{rpcErr().code}</span>
               <span class="tygor-sidebar-rpc-message">{rpcErr().message}</span>
             </div>
+          </div>
+        )}
+      </Show>
+
+      {/* Connection Stalled Warning */}
+      <Show when={props.state.connectionStalled}>
+        {(stalled) => (
+          <div class="tygor-sidebar-warning">
+            <div class="tygor-sidebar-warning-header">
+              <span class="tygor-sidebar-warning-icon">⚠️</span>
+              <span class="tygor-sidebar-warning-title">Connection Stalled</span>
+            </div>
+            <div class="tygor-sidebar-warning-message">
+              "{stalled().opId}" has been connecting for 3+ seconds.
+              This is likely caused by browser HTTP/1.1 connection limits.
+            </div>
+            <div class="tygor-sidebar-warning-fix">
+              <strong>Fix:</strong> Enable HTTP/2 by adding <code>@vitejs/plugin-basic-ssl</code> to your vite.config
+            </div>
+            <a
+              class="tygor-sidebar-warning-link"
+              href={stalled().docsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Learn more →
+            </a>
           </div>
         )}
       </Show>

@@ -697,6 +697,38 @@ export function tygor(options: TygorDevOptions): Plugin {
     return checkHealth(currentServer.port);
   }
 
+  // Strip HTTP/2 pseudo-headers (e.g., :method, :path, :scheme, :authority)
+  // These are only valid in HTTP/2 and cause errors when used with HTTP/1.1
+  function stripPseudoHeaders(headers: IncomingMessage["headers"]): Record<string, string | string[] | undefined> {
+    const filtered: Record<string, string | string[] | undefined> = {};
+    for (const [key, value] of Object.entries(headers)) {
+      if (!key.startsWith(":")) {
+        filtered[key] = value;
+      }
+    }
+    return filtered;
+  }
+
+  // Strip HTTP/1.1-specific headers that are forbidden in HTTP/2
+  // These include connection management headers that don't apply to HTTP/2
+  function stripHttp1Headers(headers: IncomingMessage["headers"]): Record<string, string | string[] | undefined> {
+    const http1SpecificHeaders = new Set([
+      "connection",
+      "keep-alive",
+      "transfer-encoding",
+      "upgrade",
+      "proxy-connection",
+    ]);
+
+    const filtered: Record<string, string | string[] | undefined> = {};
+    for (const [key, value] of Object.entries(headers)) {
+      if (!http1SpecificHeaders.has(key.toLowerCase())) {
+        filtered[key] = value;
+      }
+    }
+    return filtered;
+  }
+
   // Proxy to tygor devtools server
   function proxyToDevServer(req: IncomingMessage, res: ServerResponse, path?: string) {
     const targetPath = path ?? req.url;
@@ -710,10 +742,10 @@ export function tygor(options: TygorDevOptions): Plugin {
         port: devServer.port,
         path: targetPath,
         method: req.method,
-        headers: req.headers,
+        headers: stripPseudoHeaders(req.headers),
       },
       (proxyRes) => {
-        res.writeHead(proxyRes.statusCode ?? 500, proxyRes.headers);
+        res.writeHead(proxyRes.statusCode ?? 500, stripHttp1Headers(proxyRes.headers));
         proxyRes.pipe(res);
       }
     );
@@ -743,11 +775,11 @@ export function tygor(options: TygorDevOptions): Plugin {
         port,
         path: targetPath,
         method: req.method,
-        headers: req.headers,
+        headers: stripPseudoHeaders(req.headers),
       },
       (proxyRes) => {
         // For SSE streams, disable buffering
-        res.writeHead(proxyRes.statusCode ?? 500, proxyRes.headers);
+        res.writeHead(proxyRes.statusCode ?? 500, stripHttp1Headers(proxyRes.headers));
 
         // Manual piping for better control over SSE/streaming responses
         proxyRes.on("data", (chunk) => {

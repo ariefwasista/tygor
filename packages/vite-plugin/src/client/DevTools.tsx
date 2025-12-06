@@ -9,11 +9,18 @@ import type { TygorRpcError } from "./types";
 export type DevToolsMode = "overlay" | "sidebar";
 export type SidebarSide = "left" | "right";
 
+interface ConnectionStalledInfo {
+  opId: string;
+  message: string;
+  docsUrl: string;
+}
+
 interface DevToolsState {
   status: GetStatusResponse | null;
   rpcError: TygorRpcError | null;
   disconnectedSince: number | null;
   errorSince: number | null;
+  connectionStalled: ConnectionStalledInfo | null;
 }
 
 const RPC_ERROR_AUTO_DISMISS = 5000;
@@ -29,6 +36,7 @@ export function DevTools() {
     rpcError: null,
     disconnectedSince: null,
     errorSince: null,
+    connectionStalled: null,
   });
 
   let rpcErrorTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -131,6 +139,19 @@ export function DevTools() {
     });
   });
 
+  // Listen for connection stalled warnings (HTTP/1.1 limit)
+  createEffect(() => {
+    const handleConnectionStalled = (event: CustomEvent<ConnectionStalledInfo>) => {
+      setState((prev) => ({ ...prev, connectionStalled: event.detail }));
+    };
+
+    window.addEventListener("tygor:connection-stalled", handleConnectionStalled as EventListener);
+
+    onCleanup(() => {
+      window.removeEventListener("tygor:connection-stalled", handleConnectionStalled as EventListener);
+    });
+  });
+
   const isBuilding = () => {
     const s = state().status;
     return s?.status === "reloading" || s?.status === "starting";
@@ -175,6 +196,7 @@ export function DevTools() {
         <TigerButton
           isBuilding={isBuilding()}
           hasError={hasError()}
+          hasWarning={state().connectionStalled !== null}
           isDisconnected={isDisconnected()}
           errorInfo={errorInfo()}
           onClick={toggleMode}

@@ -69,6 +69,48 @@ function emitRpcError(service, method, code, message, enabled) {
         }));
     }
 }
+/**
+ * Detect stalled connections due to HTTP/1.1 connection limits.
+ * Only warn once per page load in development mode.
+ */
+let hasWarnedAboutConnectionLimit = false;
+function warnIfConnectionStalled(opId, getStatus) {
+    // Only check in development and in browser
+    if (typeof import.meta === "undefined" || !import.meta.env?.DEV)
+        return;
+    if (typeof window === "undefined")
+        return;
+    // Only warn on http://localhost (not https, not production)
+    if (window.location.protocol !== "http:" || window.location.hostname !== "localhost")
+        return;
+    // Check after 3 seconds if still connecting
+    setTimeout(() => {
+        if (hasWarnedAboutConnectionLimit)
+            return;
+        if (getStatus() !== "connecting")
+            return;
+        const message = `"${opId}" has been connecting for 3+ seconds. ` +
+            `This is likely caused by browser HTTP/1.1 connection limits (~6 per origin). ` +
+            `Enable HTTP/2 by adding @vitejs/plugin-basic-ssl to your vite.config.`;
+        const docsUrl = "https://github.com/ahimsalabs/tygor/blob/main/docs/http2.md";
+        console.warn("%c🐯 tygor: SSE connection stalled", "color: orange; font-weight: bold", `\n\n"${opId}" has been connecting for 3+ seconds.\n` +
+            `This is likely caused by browser HTTP/1.1 connection limits (~6 per origin).\n\n` +
+            `Enable HTTP/2 for unlimited connections:\n` +
+            `  1. Install: npm install -D @vitejs/plugin-basic-ssl\n` +
+            `  2. Add to vite.config.js:\n` +
+            `     import basicSsl from "@vitejs/plugin-basic-ssl"\n` +
+            `     plugins: [basicSsl(), ...]\n` +
+            `  3. Restart dev server\n\n` +
+            `See: ${docsUrl}`);
+        // Emit event for tygor devtools
+        if (typeof CustomEvent !== "undefined") {
+            window.dispatchEvent(new CustomEvent("tygor:connection-stalled", {
+                detail: { opId, message, docsUrl, timestamp: Date.now() },
+            }));
+        }
+        hasWarnedAboutConnectionLimit = true;
+    }, 3000);
+}
 export function createClient(registry, config = {}) {
     const fetchFn = config.fetch || globalThis.fetch;
     // Determine validation settings
@@ -77,8 +119,8 @@ export function createClient(registry, config = {}) {
     const validateResponse = schemas && (config.validate?.response ?? false); // Default: false
     // Whether to emit RPC errors to devtools (default: true)
     const emitErrors = config.emitErrors ?? true;
-    // Cache atom clients so multiple accesses return the same instance
-    const atomCache = new Map();
+    // Cache livevalue clients so multiple accesses return the same instance
+    const liveValueCache = new Map();
     return new Proxy({}, {
         get: (_target, service) => {
             return new Proxy({}, {
@@ -94,14 +136,14 @@ export function createClient(registry, config = {}) {
                             return createSSEStream(opId, service, method, meta, req, options, config, fetchFn, schemas, validateRequest, validateResponse, emitErrors);
                         };
                     }
-                    // Atom endpoints return cached Atom (same instance on every access)
-                    if (meta.primitive === "atom") {
-                        let atom = atomCache.get(opId);
-                        if (!atom) {
-                            atom = createAtomClient(opId, service, method, meta, config, fetchFn, schemas, validateRequest, validateResponse, emitErrors);
-                            atomCache.set(opId, atom);
+                    // LiveValue endpoints return cached LiveValue (same instance on every access)
+                    if (meta.primitive === "livevalue") {
+                        let liveValue = liveValueCache.get(opId);
+                        if (!liveValue) {
+                            liveValue = createLiveValueClient(opId, service, method, meta, config, fetchFn, schemas, validateRequest, validateResponse, emitErrors);
+                            liveValueCache.set(opId, liveValue);
                         }
-                        return atom;
+                        return liveValue;
                     }
                     // Unary endpoints return Promise
                     return async (req = {}) => {
@@ -217,7 +259,7 @@ export function createClient(registry, config = {}) {
  * Supports both subscribe/getSnapshot (for reactive frameworks) and AsyncIterable (for await).
  */
 function createSSEStream(opId, service, method, meta, req, options, config, fetchFn, schemas, validateRequest, validateResponse, emitErrors) {
-    // Combined state (same pattern as Atom)
+    // Combined state (same pattern as LiveValue)
     let currentData = undefined;
     let currentStatus = "disconnected";
     let currentError = undefined;
@@ -271,9 +313,17 @@ function createSSEStream(opId, service, method, meta, req, options, config, fetc
         }, delay);
     };
     const connect = () => {
-        if (connectionPromise)
+        if (connectionPromise) {
+            // If controller was aborted, wait for cleanup then create new connection
+            if (controller?.signal.aborted) {
+                console.log(`[${opId}] connect() - existing promise is aborted, waiting for cleanup`);
+                return connectionPromise.catch(() => { }).finally(() => connect());
+            }
+            console.log(`[${opId}] connect() - reusing existing promise`);
             return connectionPromise;
-        controller = new AbortController();
+        }
+        console.log(`[${opId}] connect() - creating new connection`);
+        const myController = controller = new AbortController();
         // Combine with options signal if provided
         if (options?.signal) {
             if (options.signal.aborted) {
@@ -287,7 +337,8 @@ function createSSEStream(opId, service, method, meta, req, options, config, fetc
             });
         }
         setStatus(hasConnected ? "reconnecting" : "connecting");
-        connectionPromise = (async () => {
+        warnIfConnectionStalled(opId, () => currentStatus);
+        const myPromise = connectionPromise = (async () => {
             // Request validation (before sending)
             if (validateRequest && schemas?.[opId]?.request) {
                 const schema = schemas[opId].request;
@@ -415,7 +466,17 @@ function createSSEStream(opId, service, method, meta, req, options, config, fetc
                     }
                 }
             }
+            catch (e) {
+                // Rethrow to be caught by outer catch
+                throw e;
+            }
             finally {
+                try {
+                    await reader.cancel();
+                }
+                catch {
+                    // Ignore errors from cancel
+                }
                 reader.releaseLock();
             }
             // Stream ended cleanly - this is intentional completion, don't reconnect
@@ -430,12 +491,18 @@ function createSSEStream(opId, service, method, meta, req, options, config, fetc
             setStatus("error", err);
             scheduleReconnect();
         }).finally(() => {
-            connectionPromise = null;
-            controller = null;
+            // Only clear if we're still the active connection (prevent race with new connections)
+            if (connectionPromise === myPromise) {
+                connectionPromise = null;
+            }
+            if (controller === myController) {
+                controller = null;
+            }
         });
         return connectionPromise;
     };
     const disconnect = () => {
+        console.log(`[${opId}] disconnect() - controller=${!!controller}, signal.aborted=${controller?.signal.aborted}`);
         // Cancel any pending reconnect
         if (reconnectTimeout) {
             clearTimeout(reconnectTimeout);
@@ -443,10 +510,12 @@ function createSSEStream(opId, service, method, meta, req, options, config, fetc
         }
         reconnectAttempt = 0;
         if (controller) {
+            console.log(`[${opId}] disconnect() - calling controller.abort()`);
             controller.abort();
-            controller = null;
+            console.log(`[${opId}] disconnect() - after abort, signal.aborted=${controller.signal.aborted}`);
+            // Don't set controller or connectionPromise to null here
+            // Let the finally block handle cleanup after abort completes
         }
-        connectionPromise = null;
     };
     // Create async iterator for for-await usage
     const createAsyncIterator = () => {
@@ -504,16 +573,20 @@ function createSSEStream(opId, service, method, meta, req, options, config, fetc
             return createAsyncIterator();
         },
         subscribe(listener) {
+            console.log(`[${opId}] subscribe - listeners will be ${listeners.size + 1}`);
             listeners.add(listener);
             // Start connection if this is the first subscriber
             if (listeners.size === 1 && dataListeners.size === 0) {
+                console.log(`[${opId}] First subscriber - calling connect()`);
                 connect();
             }
             // Immediately emit current state
             listener(getSnapshot());
             return () => {
+                console.log(`[${opId}] unsubscribe - listeners will be ${listeners.size - 1}`);
                 listeners.delete(listener);
                 if (listeners.size === 0 && dataListeners.size === 0) {
+                    console.log(`[${opId}] Last subscriber - calling disconnect()`);
                     disconnect();
                 }
             };
@@ -540,14 +613,14 @@ function makeSubscriptionResult(status, data, error, statusUpdatedAt, dataUpdate
     };
 }
 /**
- * Creates an Atom client for synchronized state subscriptions.
- * Unlike streams, atoms represent current state - subscribers get the
+ * Creates a LiveValue client for synchronized state subscriptions.
+ * Unlike streams, livevalues represent current state - subscribers get the
  * current value immediately, then updates as they occur.
  *
  * Follows the external store contract (subscribe + getSnapshot) for
  * compatibility with React's useSyncExternalStore and similar patterns.
  */
-function createAtomClient(opId, service, method, meta, config, fetchFn, schemas, validateRequest, validateResponse, emitErrors) {
+function createLiveValueClient(opId, service, method, meta, config, fetchFn, schemas, validateRequest, validateResponse, emitErrors) {
     // Combined state
     let currentData = undefined;
     let currentStatus = "disconnected";
@@ -596,11 +669,20 @@ function createAtomClient(opId, service, method, meta, config, fetchFn, schemas,
         }, delay);
     };
     const connect = () => {
-        if (connectionPromise)
+        if (connectionPromise) {
+            // If controller was aborted, wait for cleanup then create new connection
+            if (controller?.signal.aborted) {
+                console.log(`[${opId}] connect() - existing promise is aborted, waiting for cleanup`);
+                return connectionPromise.catch(() => { }).finally(() => connect());
+            }
+            console.log(`[${opId}] connect() - reusing existing promise`);
             return connectionPromise;
-        controller = new AbortController();
+        }
+        console.log(`[${opId}] connect() - creating new connection`);
+        const myController = controller = new AbortController();
         setStatus(hasConnected ? "reconnecting" : "connecting");
-        connectionPromise = (async () => {
+        warnIfConnectionStalled(opId, () => currentStatus);
+        const myPromise = connectionPromise = (async () => {
             const req = {};
             const headers = config.headers ? config.headers() : {};
             const url = (config.baseUrl || "") + meta.path;
@@ -649,7 +731,7 @@ function createAtomClient(opId, service, method, meta, config, fetchFn, schemas,
                         setStatus("error", e);
                         return;
                     }
-                    const msg = res.statusText || "Failed to establish atom subscription";
+                    const msg = res.statusText || "Failed to establish livevalue subscription";
                     emitRpcError(service, method, "transport_error", msg, emitErrors);
                     setStatus("error", new TransportError(msg, httpStatus, undefined, rawBody.slice(0, 1000)));
                     return;
@@ -709,8 +791,8 @@ function createAtomClient(opId, service, method, meta, config, fetchFn, schemas,
                                         setStatus("error", e);
                                         return;
                                     }
-                                    emitRpcError(service, method, "transport_error", "Failed to parse atom event", emitErrors);
-                                    setStatus("error", new TransportError("Failed to parse atom event", httpStatus, e, data));
+                                    emitRpcError(service, method, "transport_error", "Failed to parse livevalue event", emitErrors);
+                                    setStatus("error", new TransportError("Failed to parse livevalue event", httpStatus, e, data));
                                     return;
                                 }
                             }
@@ -718,11 +800,21 @@ function createAtomClient(opId, service, method, meta, config, fetchFn, schemas,
                     }
                 }
             }
+            catch (e) {
+                // Rethrow to be caught by outer catch
+                throw e;
+            }
             finally {
+                try {
+                    await reader.cancel();
+                }
+                catch {
+                    // Ignore errors from cancel
+                }
                 reader.releaseLock();
             }
-            // Atom connection closed unexpectedly - reconnect
-            // (Atoms represent persistent server state, they shouldn't end cleanly)
+            // LiveValue connection closed unexpectedly - reconnect
+            // (LiveValues represent persistent server state, they shouldn't end cleanly)
             setStatus("reconnecting");
             scheduleReconnect();
         })().catch((err) => {
@@ -735,12 +827,18 @@ function createAtomClient(opId, service, method, meta, config, fetchFn, schemas,
             setStatus("error", err);
             scheduleReconnect();
         }).finally(() => {
-            connectionPromise = null;
-            controller = null;
+            // Only clear if we're still the active connection (prevent race with new connections)
+            if (connectionPromise === myPromise) {
+                connectionPromise = null;
+            }
+            if (controller === myController) {
+                controller = null;
+            }
         });
         return connectionPromise;
     };
     const disconnect = () => {
+        console.log(`[${opId}] disconnect() - controller=${!!controller}, signal.aborted=${controller?.signal.aborted}`);
         // Cancel any pending reconnect
         if (reconnectTimeout) {
             clearTimeout(reconnectTimeout);
@@ -748,10 +846,12 @@ function createAtomClient(opId, service, method, meta, config, fetchFn, schemas,
         }
         reconnectAttempt = 0;
         if (controller) {
+            console.log(`[${opId}] disconnect() - calling controller.abort()`);
             controller.abort();
-            controller = null;
+            console.log(`[${opId}] disconnect() - after abort, signal.aborted=${controller.signal.aborted}`);
+            // Don't set controller or connectionPromise to null here
+            // Let the finally block handle cleanup after abort completes
         }
-        connectionPromise = null;
     };
     return {
         subscribe(listener) {

@@ -20,11 +20,11 @@ type EndpointDescriptor struct {
 	// FullName is the qualified name: "ServiceName.EndpointName" (e.g., "Users.Create").
 	FullName string
 
-	// Primitive is the tygor communication primitive: "query", "exec", "stream", or "atom".
+	// Primitive is the tygor communication primitive: "query", "exec", "stream", or "livevalue".
 	//   - "query": cacheable read (HTTP GET)
 	//   - "exec": mutation (HTTP POST)
 	//   - "stream": server-sent events (HTTP POST + SSE response)
-	//   - "atom": synchronized state (HTTP POST + SSE response, latest-wins)
+	//   - "livevalue": synchronized state (HTTP POST + SSE response, latest-wins)
 	Primitive string
 
 	// Path is the URL path: "/{ServiceName}/{EndpointName}".
