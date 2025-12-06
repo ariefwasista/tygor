@@ -154,8 +154,8 @@ func TestHandler_ServeHTTP_POST_InvalidJSON(t *testing.T) {
 
 func TestHandler_ServeHTTP_GET_WithQueryParams(t *testing.T) {
 	type GetRequest struct {
-		Name  string `schema:"name"`
-		Email string `schema:"email"`
+		Name  string `json:"name"`
+		Email string `json:"email"`
 	}
 
 	fn := func(ctx context.Context, req GetRequest) (TestResponse, error) {
@@ -466,7 +466,7 @@ func TestHandler_ChainedInterceptors(t *testing.T) {
 
 func TestHandler_ServeHTTP_GET_PointerRequest(t *testing.T) {
 	type GetRequest struct {
-		Name string `schema:"name"`
+		Name string `json:"name"`
 	}
 
 	fn := func(ctx context.Context, req *GetRequest) (TestResponse, error) {
@@ -508,7 +508,7 @@ func TestHandler_WithSkipValidation(t *testing.T) {
 
 func TestHandler_ServeHTTP_GET_ArrayParams(t *testing.T) {
 	type GetRequest struct {
-		IDs []string `schema:"ids"`
+		IDs []string `json:"ids"`
 	}
 
 	fn := func(ctx context.Context, req GetRequest) (TestResponse, error) {
@@ -530,7 +530,7 @@ func TestHandler_ServeHTTP_GET_ArrayParams(t *testing.T) {
 
 func TestHandler_ServeHTTP_GET_IntArrayParams(t *testing.T) {
 	type GetRequest struct {
-		Numbers []int `schema:"num"`
+		Numbers []int `json:"num"`
 	}
 
 	fn := func(ctx context.Context, req GetRequest) (TestResponse, error) {
@@ -555,7 +555,7 @@ func TestHandler_ServeHTTP_GET_IntArrayParams(t *testing.T) {
 
 func TestHandler_ServeHTTP_GET_SpecialCharacters(t *testing.T) {
 	type GetRequest struct {
-		Query string `schema:"q"`
+		Query string `json:"q"`
 	}
 
 	fn := func(ctx context.Context, req GetRequest) (TestResponse, error) {
@@ -662,7 +662,7 @@ func TestHandler_ServeHTTP_ResponseEncodingError(t *testing.T) {
 
 func TestHandler_ServeHTTP_GET_StrictQueryParams_RejectsUnknown(t *testing.T) {
 	type GetRequest struct {
-		Name string `schema:"name"`
+		Name string `json:"name"`
 	}
 
 	fn := func(ctx context.Context, req GetRequest) (TestResponse, error) {
@@ -686,8 +686,8 @@ func TestHandler_ServeHTTP_GET_StrictQueryParams_RejectsUnknown(t *testing.T) {
 
 func TestHandler_ServeHTTP_GET_StrictQueryParams_AllowsKnown(t *testing.T) {
 	type GetRequest struct {
-		Name  string `schema:"name"`
-		Email string `schema:"email"`
+		Name  string `json:"name"`
+		Email string `json:"email"`
 	}
 
 	fn := func(ctx context.Context, req GetRequest) (TestResponse, error) {
@@ -823,51 +823,35 @@ func TestHandler_ServeHTTP_MaxRequestBodySize_DefaultLimit(t *testing.T) {
 }
 
 // TestHandler_GET_TagBehavior tests which struct tags work for GET query param decoding.
-// gorilla/schema uses "schema" tags by default, NOT "json" tags.
-// IMPORTANT: gorilla/schema uses case-insensitive matching for field names.
+// tygor configures gorilla/schema to use "json" tags via SetAliasTag("json").
+// This ensures TypeScript clients can use the same property names for both POST bodies
+// and GET query params, since both now use json tag names.
 func TestHandler_GET_TagBehavior(t *testing.T) {
-	t.Run("schema_tags_work", func(t *testing.T) {
+	t.Run("json_tags_work", func(t *testing.T) {
 		type Req struct {
-			Value string `schema:"myvalue"`
+			Value string `json:"my_value"`
 		}
 		fn := func(ctx context.Context, req Req) (TestResponse, error) {
 			return TestResponse{Message: req.Value}, nil
 		}
+		// Using "my_value" from json tag - this works because we configure SetAliasTag("json")
 		w := NewTestRequest().
 			GET("/test").
-			WithQuery("myvalue", "hello").
+			WithQuery("my_value", "hello").
 			ServeHandler(Query(fn), testContextConfig{})
 
 		tygortest.AssertStatus(t, w, http.StatusOK)
 		tygortest.AssertJSONResponse(t, w, TestResponse{Message: "hello"})
 	})
 
-	t.Run("json_tags_are_ignored", func(t *testing.T) {
+	t.Run("field_name_works_without_json_tag", func(t *testing.T) {
 		type Req struct {
-			Value string `json:"myjsonvalue"`
+			Value string // no json tag
 		}
 		fn := func(ctx context.Context, req Req) (TestResponse, error) {
 			return TestResponse{Message: req.Value}, nil
 		}
-		// Using "myjsonvalue" which is the json tag - this should NOT work
-		w := NewTestRequest().
-			GET("/test").
-			WithQuery("myjsonvalue", "hello").
-			ServeHandler(Query(fn), testContextConfig{})
-
-		tygortest.AssertStatus(t, w, http.StatusOK)
-		// Value should be empty because json tag is ignored by gorilla/schema
-		tygortest.AssertJSONResponse(t, w, TestResponse{Message: ""})
-	})
-
-	t.Run("field_name_works_as_default", func(t *testing.T) {
-		type Req struct {
-			Value string `json:"myjsonvalue"` // json tag ignored
-		}
-		fn := func(ctx context.Context, req Req) (TestResponse, error) {
-			return TestResponse{Message: req.Value}, nil
-		}
-		// Using "Value" (field name) - this should work
+		// Without json tag, field name is used (case-insensitive)
 		w := NewTestRequest().
 			GET("/test").
 			WithQuery("Value", "hello").
@@ -892,5 +876,23 @@ func TestHandler_GET_TagBehavior(t *testing.T) {
 
 		tygortest.AssertStatus(t, w, http.StatusOK)
 		tygortest.AssertJSONResponse(t, w, TestResponse{Message: "hello"})
+	})
+
+	t.Run("json_tag_takes_precedence_over_field_name", func(t *testing.T) {
+		type Req struct {
+			Value string `json:"custom_name"`
+		}
+		fn := func(ctx context.Context, req Req) (TestResponse, error) {
+			return TestResponse{Message: req.Value}, nil
+		}
+		// Using field name "Value" should NOT work when json tag is present
+		w := NewTestRequest().
+			GET("/test").
+			WithQuery("Value", "hello").
+			ServeHandler(Query(fn), testContextConfig{})
+
+		tygortest.AssertStatus(t, w, http.StatusOK)
+		// Value should be empty because "Value" doesn't match json tag "custom_name"
+		tygortest.AssertJSONResponse(t, w, TestResponse{Message: ""})
 	})
 }

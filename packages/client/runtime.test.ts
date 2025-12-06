@@ -1,8 +1,8 @@
 import { describe, test, expect, mock } from "bun:test";
-import { createClient, TygorError, ServerError, TransportError, ServiceRegistry, Atom, Stream, SubscriptionResult } from "./runtime";
+import { createClient, TygorError, ServerError, TransportError, ServiceRegistry, Stream, SubscriptionResult } from "./runtime";
 
-// Helper to create a mock response
-function mockResponse(status: number, body: any, statusText = "") {
+// Helper to create a mock response (partial Response for testing)
+function mockResponse(status: number, body: any, statusText = ""): Response {
   const bodyStr = typeof body === "string" ? body : JSON.stringify(body);
   return {
     ok: status >= 200 && status < 300,
@@ -10,7 +10,7 @@ function mockResponse(status: number, body: any, statusText = "") {
     statusText,
     clone: function() { return this; },
     text: async () => bodyStr,
-  };
+  } as Response;
 }
 
 describe("TygorError hierarchy", () => {
@@ -27,11 +27,11 @@ describe("TygorError hierarchy", () => {
   });
 
   test("ServerError with details", () => {
-    const error = new ServerError("validation_error", "Invalid input", 400, {
+    const error = new ServerError("invalid_argument", "Invalid input", 400, {
       field: "email",
       reason: "invalid format",
     });
-    expect(error.code).toBe("validation_error");
+    expect(error.code).toBe("invalid_argument");
     expect(error.httpStatus).toBe(400);
     expect(error.details).toEqual({ field: "email", reason: "invalid format" });
   });
@@ -377,11 +377,11 @@ describe("createClient", () => {
     const client = createClient(searchRegistry, { baseUrl: "http://localhost:8080" });
 
     await client.Test.Search({ name: "test", id: "123", limit: 10 });
-    const url1 = mockFetch.mock.calls[0][0];
+    const url1 = (mockFetch.mock.calls as unknown as string[][])[0][0];
     mockFetch.mockClear();
 
     await client.Test.Search({ limit: 10, id: "123", name: "test" });
-    const url2 = mockFetch.mock.calls[0][0];
+    const url2 = (mockFetch.mock.calls as unknown as string[][])[0][0];
 
     expect(url1).toBe(url2);
     expect(url1).toBe("http://localhost:8080/test/search?id=123&limit=10&name=test");

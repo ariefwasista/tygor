@@ -14,7 +14,7 @@ import "encoding/json"
 //	}
 //
 // Wire format: {"result": null}
-type Empty *struct{}
+type Empty = *struct{}
 
 // response is the internal envelope type for successful responses.
 // This wraps the actual result in a {"result": ...} structure.

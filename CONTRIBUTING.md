@@ -8,9 +8,10 @@ Thanks for your interest in contributing to tygor!
 
 ### Prerequisites
 
-- Go 1.23 or later
-- Docker (for local CI testing)
-- Bun (for TypeScript packages and examples)
+- Go 1.23 or later (that's it!)
+- Docker (optional, for local CI testing)
+
+All other tools (Bun, staticcheck, etc.) are managed automatically.
 
 ### Initial Setup
 
@@ -20,94 +21,106 @@ Thanks for your interest in contributing to tygor!
    cd tygor
    ```
 
-2. Install dependencies (sets up bun workspaces):
+2. Bootstrap the project (only requires Go):
    ```bash
-   bun install
+   go run github.com/go-task/task/v3/cmd/task@latest setup
    ```
 
-   This creates symlinks so examples and vite-plugin use your local `@tygor/client` package during development.
+   This installs to `.tools/`:
+   - `task` - the task runner (replaces Make)
+   - `aqua` - tool version manager
+   - `bun` - JavaScript runtime (via aqua)
+   - `staticcheck` - Go linter (via aqua)
+   - `jq` - JSON processor (via aqua)
+   - All npm workspace packages
 
-3. Run Go tests:
+3. Run tests:
    ```bash
-   make test
+   .tools/task test
    ```
 
-4. Run TypeScript runtime tests:
-   ```bash
-   cd client && bun test
-   ```
+After setup, use `.tools/task` or add `.tools/` to your PATH.
 
 ## Development Workflow
 
-### Make Targets
+### Task Commands
 
-The root Makefile provides all the commands you need:
+Run `.tools/task --list` to see all available commands:
 
 ```bash
-make precommit   # Run ALL checks (format, test, lint, examples) - run before committing
-make ci-local    # Run GitHub Actions workflow locally via Docker
-make test        # Run Go tests
-make lint        # Run go vet and staticcheck
-make fmt         # Format Go code
-make fmt-check   # Check formatting without modifying files
-make readme      # Update README.md with code snippets
-make check       # Verify README snippets are up-to-date
+.tools/task              # Run tests and lint (default)
+.tools/task setup        # Bootstrap project
+.tools/task test         # Run Go tests
+.tools/task lint         # Run go vet and staticcheck
+.tools/task fmt          # Format Go code
+.tools/task fmt:check    # Check formatting without modifying
+.tools/task gen          # Generate client error types
+.tools/task precommit    # Run ALL checks before committing
+.tools/task ci:local     # Run GitHub Actions locally via Docker
+.tools/task release -- patch|minor|major  # Release packages
 ```
+
+Or add `.tools/` to your PATH to use `task` directly.
 
 ### Before Committing
 
-Always run `make precommit` before committing. This runs:
+Always run `.tools/task precommit` before committing. This runs:
 1. Format check (`gofmt`)
 2. Go tests
 3. Linters (`go vet`, `staticcheck`)
-4. README snippet check
-5. All example checks
+4. TypeScript type checks
+5. Generated file verification
 
 ### Testing CI Locally
 
 To test the GitHub Actions workflow locally before pushing:
 
 ```bash
-make ci-local
+.tools/task ci:local
 ```
 
-This uses [act](https://github.com/nektos/act) to run the CI workflow in Docker, exactly as it would run on GitHub.
+This uses [act](https://github.com/nektos/act) to run the CI workflow in Docker.
 
 ## Project Structure
 
 ```
 tygor/
-├── .github/workflows/   # CI workflow (runs make precommit)
-├── client/              # @tygor/client npm package
-│   ├── runtime.ts       # TypeScript client runtime
-│   ├── runtime.test.ts  # Runtime tests
-│   └── package.json     # Published to npm as @tygor/client
-├── vite-plugin/         # @tygor/vite-plugin npm package
-├── examples/            # Example applications (separate Go module)
-│   ├── go.mod           # Shared examples module
-│   ├── newsserver/      # Simple CRUD example
-│   ├── blog/            # Complex auth/authz example
-│   ├── protobuf/        # Protobuf types example
-│   └── react/           # Standalone React+Vite example (own go.mod)
+├── .github/workflows/   # CI workflow
+├── packages/
+│   ├── client/          # @tygor/client npm package
+│   └── vite-plugin/     # @tygor/vite-plugin npm package
+├── examples/            # Example applications
 ├── middleware/          # Built-in middleware (CORS, logging)
 ├── tygorgen/            # Code generator
-├── go.work              # Go workspace (links all modules)
+├── Taskfile.yml         # Task definitions (replaces Makefile)
+├── aqua.yaml            # Tool versions (bun, staticcheck, etc.)
+├── go.work              # Go workspace
 └── *.go                 # Core framework files
 ```
+
+### Tool Management
+
+This repo uses [Task](https://taskfile.dev/) + [aqua](https://aquaproj.github.io/) for reproducible tooling:
+
+- `Taskfile.yml` - defines all tasks ([Task docs](https://taskfile.dev/usage/))
+- `aqua.yaml` - pins tool versions ([aqua docs](https://aquaproj.github.io/docs/tutorial/))
+- `.tools/` - local tool installation (gitignored)
+
+To update tool versions, edit `aqua.yaml` and run `.tools/task setup`.
+
+To find packages for aqua: [aqua registry search](https://aquaproj.github.io/aqua-registry/)
 
 ### Multi-Module Repository
 
 This repo uses a Go workspace (`go.work`) to manage multiple Go modules:
 
 - **`/`** - Main tygor module
-- **`/examples`** - Shared examples module (protobuf, etc.)
-- **`/examples/react`** - Standalone React example (can be used as a template)
-
-The workspace allows examples to use the local tygor package during development while also being usable standalone via `degit`.
+- **`/examples`** - Shared examples module
+- **`/examples/react`** - Standalone React example
 
 ```bash
-# Main module tests (uses GOWORK=off to test main module only)
-make test
+# Main module tests (uses GOWORK=off)
+.tools/task test
 
 # Build examples
 cd examples && go build ./...
@@ -117,164 +130,97 @@ cd examples && go build ./...
 
 This repo uses bun workspaces to manage TypeScript packages:
 
-- **`/client`** - The `@tygor/client` package published to npm
-- **`/vite-plugin`** - The `@tygor/vite-plugin` package (uses workspace client)
-- **`/examples/*/client`** - Example clients that depend on `@tygor/client`
+- **`/packages/client`** - The `@tygor/client` package
+- **`/packages/vite-plugin`** - The `@tygor/vite-plugin` package
 
-During development, bun creates symlinks so examples and vite-plugin automatically use your local client code. When you make changes to `client/runtime.ts`:
-
-1. Rebuild the client: `cd client && bun run build`
-2. All workspace packages will use the updated version via symlink
+During development, bun creates symlinks so packages use local code.
 
 ## Making Changes
 
 ### Go Code
 
 1. Make your changes
-2. Run tests: `go test ./...`
-3. Run examples to verify: `cd examples/newsserver && go run main.go`
-4. Check test coverage: `go test -cover ./...`
+2. Run tests: `.tools/task test`
+3. Run linters: `.tools/task lint`
+4. Format: `.tools/task fmt`
 
 ### TypeScript Client
 
-1. Edit `client/runtime.ts`
-2. Run tests: `cd client && bun test`
-3. Build: `cd client && bun run build`
-4. Test with examples:
-   ```bash
-   cd examples/react
-   bun dev  # Starts Go server + Vite with hot reload
-   ```
+1. Edit `packages/client/runtime.ts`
+2. Run tests: `cd packages/client && bun test`
+3. Build: `cd packages/client && bun run build`
 
 ### Code Generator
 
-The code generator lives in `tygorgen/`. Changes here affect:
-- Generated TypeScript types (`types.ts`)
-- Generated manifest (`manifest.ts`)
-
-Test by running examples and regenerating their types.
+The generator lives in `tygorgen/`. Test by running examples and regenerating types.
 
 ## Testing
 
 ### Go Tests
 
 ```bash
-# All tests
-go test ./...
-
-# With coverage
-go test -cover ./...
-
-# Specific package
-go test ./middleware
+.tools/task test       # All tests
+go test -cover ./...   # With coverage
+go test ./middleware   # Specific package
 ```
 
 ### TypeScript Tests
 
 ```bash
-cd client
+cd packages/client
 bun test          # Run tests
 bun test --watch  # Watch mode
 ```
 
 ## Publishing Packages
 
-**Note**: Only maintainers can publish. If you're contributing changes, we'll publish after merging.
+**Note**: Only maintainers can publish.
 
-To publish new versions of `@tygor/client` and `@tygor/vite-plugin`:
-
-1. Update versions in `client/package.json` and `vite-plugin/package.json`
-2. Rebuild: `bun run --cwd client build && bun run --cwd vite-plugin build`
-3. Publish: `npm publish --access public` in each package directory
-4. Commit the version bumps
-5. Tag the release
-
-## Examples
-
-Examples are in a separate Go module (`examples/go.mod`) with standardized make targets.
-
-### Make Targets
-
-Each example supports:
 ```bash
-make run        # Start server
-make gen        # Generate TypeScript
-make test       # Run tests
-make fmt        # Format code
-make check      # Verify generated files (for CI)
-make snippets   # Extract code snippets as markdown
+.tools/task release -- patch   # or minor, major
 ```
 
-### Snippet Markers
-
-Examples contain marked code regions for documentation extraction. Add markers around key code:
-
-```go
-// [snippet:handler-example]
-func MyHandler(ctx context.Context, req *api.Request) (*api.Response, error) {
-    // This code can be extracted to docs
-}
-// [/snippet:handler-example]
-```
-
-Extract with `make snippet-go` or `make snippet-ts`.
-
-### Guidelines
-
-1. Keep examples simple and focused on demonstrating specific features
-2. Add snippet markers around documentation-worthy code
-3. Run `make check` before submitting to ensure generated files are current
-4. Test that examples build and run before submitting
+This handles version bumping, publishing, and tagging.
 
 ## Commit Messages
 
-We use [Conventional Commits](https://www.conventionalcommits.org/). Format:
+We use [Conventional Commits](https://www.conventionalcommits.org/):
 
 ```
 <type>(<scope>): <description>
 ```
 
-**Types:**
-- `feat:` new features
-- `fix:` bug fixes
-- `docs:` documentation changes
-- `refactor:` code refactoring (no functional change)
-- `test:` adding or updating tests
-- `chore:` maintenance tasks
+**Types:** `feat`, `fix`, `docs`, `refactor`, `test`, `chore`
 
-**Scopes** (optional): `client`, `vite-plugin`, `tygorgen`, `middleware`
+**Scopes:** `client`, `vite-plugin`, `tygorgen`, `middleware`
 
 **Examples:**
 ```
 feat(client): add retry support for failed requests
 fix(vite-plugin): pin tygor CLI to package version
 docs: update installation instructions
-refactor(tygorgen): simplify type generation logic
 ```
 
 ## Pull Request Process
 
 1. Create a feature branch from `main`
-2. Make your changes with clear, focused commits using conventional commit format
-3. Add tests for new functionality
-4. Run `make precommit` to ensure all checks pass
-5. Optionally run `make ci-local` to test the full CI workflow
-6. Update documentation if needed
-7. Submit PR with a clear description of changes
+2. Make changes with clear commits
+3. Run `.tools/task precommit`
+4. Submit PR with clear description
 
-CI will automatically run `make precommit` on your PR.
+CI runs `.tools/task precommit` automatically.
 
 ## Code Style
 
 ### Go
-- Run `make fmt` to format code (CI enforces `gofmt`)
+- Run `.tools/task fmt` to format code
 - Keep handlers simple and focused
 - Document exported types and functions
 
 ### TypeScript
 - Use TypeScript strict mode
 - Prefer functional style
-- Keep the runtime small and focused
+- Keep the runtime small
 
 ## Questions?
 

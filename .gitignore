@@ -2,6 +2,9 @@ coverage.*
 node_modules
 package-lock.json
 
+# Task + aqua tools (project-local)
+.tools/
+
 # TypeScript build output (client runtime)
 client/runtime.js
 client/runtime.d.ts

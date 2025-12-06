@@ -1,0 +1,193 @@
+# Taskfile for tygor
+# Bootstrap: go run github.com/go-task/task/v3/cmd/task@latest setup
+# https://taskfile.dev/
+
+version: '3'
+
+vars:
+  TOOLS_DIR: "{{.ROOT_DIR}}/.tools"
+  AQUA_ROOT: "{{.ROOT_DIR}}/.tools/aqua-pkgs"
+
+env:
+  GOBIN: "{{.TOOLS_DIR}}"
+  AQUA_ROOT_DIR: "{{.AQUA_ROOT}}"
+  PATH: "{{.TOOLS_DIR}}:{{.AQUA_ROOT}}/bin:{{.Env.PATH}}"
+
+tasks:
+  # ============================================================================
+  # Setup
+  # ============================================================================
+
+  setup:
+    desc: Bootstrap project (only requires Go)
+    cmds:
+      - go install github.com/go-task/task/v3/cmd/task@latest
+      - go install github.com/aquaproj/aqua/v2/cmd/aqua@latest
+      - go install honnef.co/go/tools/cmd/staticcheck@latest
+      - "{{.TOOLS_DIR}}/aqua i"
+      - "{{.TOOLS_DIR}}/aqua exec -- bun install --ignore-scripts"
+    sources:
+      - aqua.yaml
+      - package.json
+
+  # ============================================================================
+  # Development
+  # ============================================================================
+
+  default:
+    desc: Run tests and lint
+    deps: [test, lint]
+
+  test:
+    desc: Run Go tests
+    cmds:
+      - GOWORK=off go test ./...
+
+  lint:
+    desc: Run go vet and staticcheck
+    cmds:
+      - GOWORK=off go vet ./...
+      - GOWORK=off staticcheck ./...
+
+  fmt:
+    desc: Format Go code
+    cmds:
+      - gofmt -w .
+
+  fmt:check:
+    desc: Check Go formatting
+    cmds:
+      - cmd: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "Files need formatting:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+  gen:
+    desc: Generate client error types from Go source
+    cmds:
+      - go run ./cmd/tygor gen packages/client/generated -t ErrorCode -t Error -p tygor.dev/tygor
+
+  typecheck:docs:
+    desc: Type-check documentation examples
+    cmds:
+      - bun x typescript --noEmit --project doc/examples/tsconfig.json
+
+  typecheck:client:
+    desc: Type-check client package (including tests)
+    cmds:
+      - bun x typescript --noEmit --project packages/client/tsconfig.test.json
+
+  typecheck:vite-plugin:
+    desc: Type-check vite plugin
+    dir: packages/vite-plugin
+    cmds:
+      - bun run --silent typecheck
+
+  # ============================================================================
+  # Precommit checks (run with: task precommit)
+  # ============================================================================
+
+  precommit:
+    desc: Run all precommit checks
+    deps:
+      - fmt:check
+    cmds:
+      - task: precommit:parallel
+      - echo "All precommit checks passed."
+
+  precommit:parallel:
+    internal: true
+    deps:
+      - precommit:test
+      - precommit:lint
+      - precommit:typecheck
+      - precommit:vite-plugin
+      - precommit:devserver
+      - precommit:client-gen
+      - precommit:version-sync
+      - precommit:client-bundle
+
+  precommit:test:
+    internal: true
+    cmds:
+      - cmd: output=$(GOWORK=off go test ./... 2>&1) || (echo "$output"; exit 1)
+        silent: true
+
+  precommit:lint:
+    internal: true
+    cmds:
+      - cmd: output=$(GOWORK=off go vet ./... 2>&1) || (echo "$output"; exit 1)
+        silent: true
+      - cmd: output=$(GOWORK=off staticcheck ./... 2>&1) || (echo "$output"; exit 1)
+        silent: true
+
+  precommit:typecheck:
+    internal: true
+    cmds:
+      - bun x typescript --noEmit --project doc/examples/tsconfig.json
+      - bun x typescript --noEmit --project packages/client/tsconfig.test.json
+
+  precommit:vite-plugin:
+    internal: true
+    deps: [precommit:client-bundle]
+    dir: packages/vite-plugin
+    cmds:
+      - bun run --silent typecheck
+
+  precommit:devserver:
+    internal: true
+    cmds:
+      - go run ./cmd/tygor gen --check -p ./cmd/tygor/internal/dev ./packages/vite-plugin/src/devserver
+
+  precommit:client-gen:
+    internal: true
+    cmds:
+      - go run ./cmd/tygor gen --check packages/client/generated -t ErrorCode -t Error -p tygor.dev/tygor
+
+  precommit:version-sync:
+    internal: true
+    cmds:
+      - cmd: |
+          if ! diff -q VERSION cmd/tygor/VERSION > /dev/null 2>&1; then
+            echo "ERROR: VERSION files are out of sync"
+            echo "  VERSION:          $(cat VERSION)"
+            echo "  cmd/tygor/VERSION: $(cat cmd/tygor/VERSION)"
+            echo "Run: cp VERSION cmd/tygor/VERSION"
+            exit 1
+          fi
+
+  precommit:client-bundle:
+    internal: true
+    dir: packages/vite-plugin
+    cmds:
+      - bun run --silent build:client
+      - cmd: |
+          if [ -d {{.ROOT_DIR}}/.jj ]; then
+            changes=$(jj diff --name-only packages/vite-plugin/src/generated/client-bundle.ts 2>/dev/null | grep -v '^$' || true)
+          else
+            changes=$(git diff --name-only packages/vite-plugin/src/generated/client-bundle.ts 2>/dev/null || true)
+          fi
+          if [ -n "$changes" ]; then
+            echo ""
+            echo "ERROR: Client bundle out of sync with packages/vite-plugin/src/client/ sources."
+            echo "Run 'cd packages/vite-plugin && bun run build' to update."
+            echo ""
+            exit 1
+          fi
+
+  # ============================================================================
+  # CI & Release
+  # ============================================================================
+
+  ci:local:
+    desc: Run GitHub Actions workflow locally via Docker
+    cmds:
+      - act --container-architecture linux/amd64
+
+  release:
+    desc: "Release packages (usage: task release -- patch|minor|major)"
+    cmds:
+      - ./release.bash {{.CLI_ARGS}}

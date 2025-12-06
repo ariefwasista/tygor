@@ -354,12 +354,12 @@ app := tygor.NewApp().
 
 ### 7.1 Query String Decoding (GET)
 
-For GET requests, the library MUST decode query parameters using a decoder compatible with `gorilla/schema`.
+For GET requests, the library MUST decode query parameters using a decoder compatible with `gorilla/schema`, configured to use `json` tags via `SetAliasTag("json")`.
 
-**Important:** GET requests use `schema` struct tags, NOT `json` tags. The `json` tags are ignored by the query parameter decoder.
+**Important:** GET requests use `json` struct tags, just like POST request bodies. This ensures TypeScript clients can use the same property names for both request types. The query parameter decoder is configured with `SetAliasTag("json")` to read from json tags instead of the default schema tags.
 
 **Case-Insensitive Matching:**
-Query parameter names are matched case-insensitively. Without a `schema` tag, the field name is used (e.g., field `Limit` matches query param `limit`, `Limit`, or `LIMIT`). For clarity, always use explicit `schema` tags.
+Query parameter names are matched case-insensitively. Without a `json` tag, the field name is used (e.g., field `Limit` matches query param `limit`, `Limit`, or `LIMIT`).
 
 **Array Handling:**
 Arrays MUST be decoded from the "repeat" format: `?ids=1&ids=2&ids=3`
@@ -367,9 +367,9 @@ Arrays MUST be decoded from the "repeat" format: `?ids=1&ids=2&ids=3`
 **Example:**
 ```go
 type ListParams struct {
-    Limit  int      `schema:"limit"`
-    Offset int      `schema:"offset"`
-    Tags   []string `schema:"tags"`
+    Limit  int      `json:"limit"`
+    Offset int      `json:"offset"`
+    Tags   []string `json:"tags"`
 }
 
 // GET /News/List?limit=10&offset=0&tags=go&tags=tech

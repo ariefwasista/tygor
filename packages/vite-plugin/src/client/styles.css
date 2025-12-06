@@ -77,6 +77,13 @@
   transform: scale(0.98);
 }
 
+.tygor-tiger-btn--dragging {
+  cursor: grabbing !important;
+  transform: scale(1.05);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+  transition: none;
+}
+
 .tygor-tiger-btn--error {
   border-color: var(--tygor-error);
   animation: tygor-pulse-error 2s ease-in-out infinite;
@@ -88,25 +95,40 @@
 }
 
 .tygor-tiger-icon {
-  font-size: 20px;
-  line-height: 1;
+  width: 28px;
+  height: 28px;
+  display: block;
   user-select: none;
 }
 
-/* Pacing tiger animation - instant flip, smooth position */
-.tygor-tiger-runner {
-  font-size: 20px;
-  line-height: 1;
+/* Running tiger animation - gentle bounce and flip */
+.tygor-tiger-icon-running {
+  width: 28px;
+  height: 28px;
+  display: block;
   user-select: none;
-  animation: tygor-pace 0.8s steps(1) infinite;
+  animation: tygor-pace-bounce 0.8s ease-in-out infinite;
 }
 
-@keyframes tygor-pace {
-  0%, 49.9% {
-    transform: scaleX(1);
+/* Combined pace and bounce animation */
+@keyframes tygor-pace-bounce {
+  0% {
+    transform: scaleX(1) translateY(0);
   }
-  50%, 100% {
-    transform: scaleX(-1);
+  25% {
+    transform: scaleX(1) translateY(-2px);
+  }
+  49.9% {
+    transform: scaleX(1) translateY(0);
+  }
+  50% {
+    transform: scaleX(-1) translateY(0);
+  }
+  75% {
+    transform: scaleX(-1) translateY(-2px);
+  }
+  100% {
+    transform: scaleX(-1) translateY(0);
   }
 }
 
@@ -120,7 +142,8 @@
 }
 
 /* Disconnected state */
-.tygor-tiger-btn--disconnected .tygor-tiger-icon {
+.tygor-tiger-btn--disconnected .tygor-tiger-icon,
+.tygor-tiger-btn--disconnected .tygor-tiger-icon-running {
   opacity: 0.35;
   filter: grayscale(80%);
 }

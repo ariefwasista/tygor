@@ -143,14 +143,14 @@ git tag "${TAG}"
 echo ""
 echo "Publishing @tygor/client..."
 pushd packages/client
-bun publish
+bun publish --access public
 popd
 
 echo ""
 echo "Publishing @tygor/vite-plugin..."
 pushd packages/vite-plugin
 bun install --ignore-scripts
-bun publish
+bun publish --access public
 popd
 
 echo ""

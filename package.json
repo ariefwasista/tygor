@@ -4,5 +4,8 @@
   "workspaces": ["packages/*", "doc/examples"],
   "scripts": {
     "build:client": "cd packages/client && bun run build"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.4"
   }
 }

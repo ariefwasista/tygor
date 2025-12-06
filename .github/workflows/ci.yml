@@ -15,19 +15,17 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
+      - name: Bootstrap tools
+        run: go run github.com/go-task/task/v3/cmd/task@latest setup --force
+        env:
+          AQUA_ROOT_DIR: ${{ github.workspace }}/.tools/aqua-pkgs
 
-      - name: Install all workspace packages
-        run: bun install --ignore-scripts
-
-      - name: Build client package
-        run: bun run --cwd packages/client build
-
-      - name: Build vite-plugin
-        run: bun run --cwd packages/vite-plugin build:client
+      - name: Add tools to PATH
+        run: |
+          echo "${{ github.workspace }}/.tools" >> $GITHUB_PATH
+          echo "${{ github.workspace }}/.tools/aqua-pkgs/bin" >> $GITHUB_PATH
 
       - name: Run precommit checks
-        run: make precommit
+        run: task precommit
+        env:
+          AQUA_ROOT_DIR: ${{ github.workspace }}/.tools/aqua-pkgs

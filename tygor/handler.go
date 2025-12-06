@@ -26,6 +26,12 @@ var (
 )
 
 func init() {
+	// Use "json" tags for query parameter names instead of "schema" tags.
+	// This ensures TypeScript clients send the same property names (from json tags)
+	// that work for both POST bodies and GET query params.
+	schemaDecoder.SetAliasTag("json")
+	strictSchemaDecoder.SetAliasTag("json")
+
 	schemaDecoder.IgnoreUnknownKeys(true)
 	strictSchemaDecoder.IgnoreUnknownKeys(false)
 }

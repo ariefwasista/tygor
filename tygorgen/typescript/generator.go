@@ -681,12 +681,9 @@ func getFlavorConfig(config GeneratorConfig) flavorConfig {
 func (g *TypeScriptGenerator) generateFlavors(ctx context.Context, schema *ir.Schema, config GeneratorConfig, flavorCfg flavorConfig) ([]generatedFile, error) {
 	var files []generatedFile
 
-	// Sort types for deterministic output
-	sortedTypes := make([]ir.TypeDescriptor, len(schema.Types))
-	copy(sortedTypes, schema.Types)
-	sort.Slice(sortedTypes, func(i, j int) bool {
-		return sortedTypes[i].TypeName().Name < sortedTypes[j].TypeName().Name
-	})
+	// Topologically sort types so dependencies come before dependents.
+	// This ensures Zod schemas can reference each other without forward declaration issues.
+	sortedTypes := topologicalSortTypes(schema.Types)
 
 	// Build emit context
 	emitCtx := &flavor.EmitContext{
@@ -853,4 +850,152 @@ func typeToZodSchema(typ ir.TypeDescriptor, mini bool) string {
 	default:
 		return "z.unknown()"
 	}
+}
+
+// topologicalSortTypes sorts types so that dependencies come before dependents.
+// This ensures generated schemas can reference each other without forward declaration issues.
+func topologicalSortTypes(types []ir.TypeDescriptor) []ir.TypeDescriptor {
+	// Build a map of type name to type descriptor
+	typeMap := make(map[string]ir.TypeDescriptor)
+	for _, t := range types {
+		typeMap[t.TypeName().Name] = t
+	}
+
+	// Build dependency graph: type name -> list of type names it depends on
+	deps := make(map[string][]string)
+	for _, t := range types {
+		name := t.TypeName().Name
+		deps[name] = collectTypeDependencies(t)
+	}
+
+	// Kahn's algorithm for topological sort
+	// Calculate in-degree for each type
+	inDegree := make(map[string]int)
+	for _, t := range types {
+		name := t.TypeName().Name
+		if _, exists := inDegree[name]; !exists {
+			inDegree[name] = 0
+		}
+		for _, dep := range deps[name] {
+			// Only count dependencies that are in our type set
+			if _, exists := typeMap[dep]; exists {
+				inDegree[dep]++ // dep is depended on by name
+			}
+		}
+	}
+
+	// Reverse the dependency direction: we need types with no dependents first
+	// Actually we need types that ARE dependencies first (low in-degree in reverse graph)
+	// Let's rebuild: inDegree[x] = number of types that x depends on
+	inDegree = make(map[string]int)
+	for _, t := range types {
+		name := t.TypeName().Name
+		count := 0
+		for _, dep := range deps[name] {
+			if _, exists := typeMap[dep]; exists {
+				count++
+			}
+		}
+		inDegree[name] = count
+	}
+
+	// Start with types that have no dependencies
+	var queue []string
+	for _, t := range types {
+		name := t.TypeName().Name
+		if inDegree[name] == 0 {
+			queue = append(queue, name)
+		}
+	}
+	// Sort queue alphabetically for determinism
+	sort.Strings(queue)
+
+	var result []ir.TypeDescriptor
+	processed := make(map[string]bool)
+
+	for len(queue) > 0 {
+		// Pop from queue
+		name := queue[0]
+		queue = queue[1:]
+
+		if processed[name] {
+			continue
+		}
+		processed[name] = true
+
+		if t, exists := typeMap[name]; exists {
+			result = append(result, t)
+		}
+
+		// Find types that depend on this one and decrement their in-degree
+		for _, t := range types {
+			tName := t.TypeName().Name
+			if processed[tName] {
+				continue
+			}
+			for _, dep := range deps[tName] {
+				if dep == name {
+					inDegree[tName]--
+					if inDegree[tName] == 0 {
+						queue = append(queue, tName)
+					}
+					break
+				}
+			}
+		}
+		// Re-sort queue for determinism
+		sort.Strings(queue)
+	}
+
+	// Add any remaining types (in case of cycles, which shouldn't happen)
+	for _, t := range types {
+		if !processed[t.TypeName().Name] {
+			result = append(result, t)
+		}
+	}
+
+	return result
+}
+
+// collectTypeDependencies returns the names of types that a type descriptor references.
+func collectTypeDependencies(td ir.TypeDescriptor) []string {
+	var deps []string
+
+	switch t := td.(type) {
+	case *ir.StructDescriptor:
+		for _, field := range t.Fields {
+			deps = append(deps, collectTypeDescriptorDeps(field.Type)...)
+		}
+	case *ir.AliasDescriptor:
+		deps = append(deps, collectTypeDescriptorDeps(t.Underlying)...)
+	}
+
+	return deps
+}
+
+// collectTypeDescriptorDeps recursively collects referenced type names from a type descriptor.
+func collectTypeDescriptorDeps(td ir.TypeDescriptor) []string {
+	if td == nil {
+		return nil
+	}
+
+	var deps []string
+
+	switch t := td.(type) {
+	case *ir.ReferenceDescriptor:
+		deps = append(deps, t.Target.Name)
+	case *ir.ArrayDescriptor:
+		deps = append(deps, collectTypeDescriptorDeps(t.Element)...)
+	case *ir.MapDescriptor:
+		deps = append(deps, collectTypeDescriptorDeps(t.Key)...)
+		deps = append(deps, collectTypeDescriptorDeps(t.Value)...)
+	case *ir.PtrDescriptor:
+		deps = append(deps, collectTypeDescriptorDeps(t.Element)...)
+	case *ir.UnionDescriptor:
+		for _, ut := range t.Types {
+			deps = append(deps, collectTypeDescriptorDeps(ut)...)
+		}
+	}
+
+	return deps
 }

@@ -2,7 +2,7 @@ import { createSignal, createEffect, onCleanup, Show } from "solid-js";
 import { createClient } from "@tygor/client";
 import { registry as devserverRegistry } from "../devserver/manifest";
 import type { GetStatusResponse } from "../devserver/types";
-import { TigerButton, extractErrorSummary } from "./TigerButton";
+import { TigerButton, extractErrorSummary, type Position } from "./TigerButton";
 import { Sidebar } from "./Sidebar";
 import type { TygorRpcError } from "./types";
 
@@ -26,11 +26,38 @@ interface DevToolsState {
 const RPC_ERROR_AUTO_DISMISS = 5000;
 const SIDEBAR_WIDTH = 300;
 const DOCKED_STYLE_ID = "tygor-docked-styles";
+const POSITION_STORAGE_KEY = "tygor-tiger-position";
+const DEFAULT_POSITION: Position = { top: 16, right: 16 };
+
+// Load position from localStorage
+function loadPosition(): Position {
+  try {
+    const stored = localStorage.getItem(POSITION_STORAGE_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      // Validate that position has at least one horizontal and one vertical anchor
+      const hasHorizontal = typeof parsed.left === "number" || typeof parsed.right === "number";
+      const hasVertical = typeof parsed.top === "number" || typeof parsed.bottom === "number";
+      if (hasHorizontal && hasVertical) {
+        return parsed;
+      }
+    }
+  } catch {}
+  return DEFAULT_POSITION;
+}
 
 export function DevTools() {
   const [mode, setMode] = createSignal<DevToolsMode>("overlay");
   const [docked, setDocked] = createSignal(false);
-  const [side] = createSignal<SidebarSide>("right");
+  const [position, setPosition] = createSignal<Position>(loadPosition());
+
+  // Compute sidebar side based on tiger button position
+  const side = (): SidebarSide => {
+    const pos = position();
+    // If tiger is anchored to right side, sidebar opens on right
+    // If tiger is anchored to left side, sidebar opens on left
+    return pos.right !== undefined ? "right" : "left";
+  };
   const [state, setState] = createSignal<DevToolsState>({
     status: null,
     rpcError: null,
@@ -40,6 +67,32 @@ export function DevTools() {
   });
 
   let rpcErrorTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  // Save position to localStorage when it changes
+  createEffect(() => {
+    const pos = position();
+    localStorage.setItem(POSITION_STORAGE_KEY, JSON.stringify(pos));
+  });
+
+  // Sync position from other tabs via storage event
+  createEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === POSITION_STORAGE_KEY && e.newValue) {
+        try {
+          const newPos = JSON.parse(e.newValue);
+          // Validate that position has at least one horizontal and one vertical anchor
+          const hasHorizontal = typeof newPos.left === "number" || typeof newPos.right === "number";
+          const hasVertical = typeof newPos.top === "number" || typeof newPos.bottom === "number";
+          if (hasHorizontal && hasVertical) {
+            setPosition(newPos);
+          }
+        } catch {}
+      }
+    };
+
+    window.addEventListener("storage", handleStorageChange);
+    onCleanup(() => window.removeEventListener("storage", handleStorageChange));
+  });
 
   // Manage docked styles in the main document (outside shadow DOM)
   createEffect(() => {
@@ -199,6 +252,8 @@ export function DevTools() {
           hasWarning={state().connectionStalled !== null}
           isDisconnected={isDisconnected()}
           errorInfo={errorInfo()}
+          position={position()}
+          onPositionChange={setPosition}
           onClick={toggleMode}
         />
       </Show>
